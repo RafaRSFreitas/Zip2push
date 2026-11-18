@@ -2,10 +2,21 @@
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
-    android:viewportHeight="24"
-    android:tint="?attr/colorControlNormal">
-    <!-- Sun (shown in dark mode: tapping switches to day) -->
+    android:viewportHeight="24">
+    <!-- JornalWeb lucide "Sun" icon (shown in night mode: tap switches to day).
+         Stroke icon: strokeWidth 2, round caps/joins, no fill. -->
     <path
-        android:fillColor="@android:color/white"
-        android:pathData="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L13.5,5.3L17,5.5L14.5,7.8L15.3,11.2L12,9.6L8.7,11.2L9.5,7.8L7,5.5L10.5,5.3L12,2M12,22L10.5,18.7L7,18.5L9.5,16.2L8.7,12.8L12,14.4L15.3,12.8L14.5,16.2L17,18.5L13.5,18.7L12,22Z" />
+        android:pathData="M12,12m-4,0a4,4 0 1,1 8,0a4,4 0 1,1 -8,0"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M12,2v2M12,20v2M4.93,4.93l1.41,1.41M17.66,17.66l1.41,1.41M2,12h2M20,12h2M6.34,17.66l-1.41,1.41M19.07,4.93l-1.41,1.41"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
 </vector>

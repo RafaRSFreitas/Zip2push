@@ -29,11 +29,65 @@ class GitHubClient(private val token: String) {
     ) {
         /** The dropdown writes the selected item's toString() into the field. */
         override fun toString() = fullName
+
+        companion object {
+            /**
+             * optString() returns the STRING "null" for JSON null (a classic
+             * org.json trap), so nulls must be checked explicitly.
+             */
+            private fun JSONObject.optRealString(key: String): String {
+                if (isNull(key)) return ""
+                return optString(key, "").orEmpty()
+            }
+
+            /**
+             * Parses a /user/repos page defensively: entries missing owner,
+             * full_name or name are skipped instead of throwing — GitHub
+             * returns odd entries for renamed/deleted/forked repos.
+             */
+            fun parseList(arr: JSONArray): List<Repo> {
+                val out = mutableListOf<Repo>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val fullName = o.optRealString("full_name")
+                    val name = o.optRealString("name")
+                    val owner = if (o.isNull("owner")) ""
+                        else o.optJSONObject("owner")?.optRealString("login").orEmpty()
+                    if (fullName.isBlank() || name.isBlank() || owner.isBlank()) continue
+                    if (o.optBoolean("disabled", false)) continue
+                    out.add(
+                        Repo(
+                            fullName = fullName,
+                            name = name,
+                            owner = owner,
+                            private = o.optBoolean("private", false),
+                            defaultBranch = o.optRealString("default_branch")
+                                .ifBlank { "main" }
+                        )
+                    )
+                }
+                return out
+            }
+        }
     }
 
     /** A branch entry shown in the branch dropdown. */
     data class Branch(val name: String) {
         override fun toString() = name
+
+        companion object {
+            /** Parses a /branches page, skipping blank or null names. */
+            fun parseList(arr: JSONArray): List<Branch> {
+                val out = mutableListOf<Branch>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val name = if (o.isNull("name")) ""
+                        else o.optString("name", "").orEmpty()
+                    if (name.isNotBlank()) out.add(Branch(name))
+                }
+                return out
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -115,36 +169,29 @@ class GitHubClient(private val token: String) {
     /** GET /user — verifies the token and returns the login name. */
     fun verifyToken(): ApiResult<String> {
         return when (val r = execute<JSONObject>("https://api.github.com/user", "GET")) {
-            is ApiResult.Success -> ApiResult.Success(r.data.getString("login"))
+            is ApiResult.Success -> {
+                val login = r.data.optString("login", "")
+                if (login.isBlank()) ApiResult.Error(-1, "Token has no login (expired?)")
+                else ApiResult.Success(login)
+            }
             is ApiResult.Error -> r
         }
     }
 
-    /** GET /user/repos — all repositories the token can push to, newest first. */
+    /** GET /user/repos — all repositories the token can push to, newest first.
+     *  Defensive against schema changes: every field is read optionally and
+     *  malformed entries are skipped instead of crashing the caller. */
     fun listRepos(): ApiResult<List<Repo>> {
         val repos = mutableListOf<Repo>()
         var page = 1
-        while (true) {
+        while (page <= MAX_PAGES) {
             val url = "https://api.github.com/user/repos?per_page=100&page=$page" +
                     "&affiliation=owner,collaborator,organization_member&sort=full_name"
             when (val r = execute<JSONArray>(url, "GET")) {
                 is ApiResult.Success -> {
                     val arr = r.data
-                    for (i in 0 until arr.length()) {
-                        val o = arr.getJSONObject(i)
-                        if (!o.optBoolean("disabled", false)) {
-                            repos.add(
-                                Repo(
-                                    fullName = o.getString("full_name"),
-                                    name = o.getString("name"),
-                                    owner = o.getJSONObject("owner").getString("login"),
-                                    private = o.optBoolean("private", false),
-                                    defaultBranch = o.optString("default_branch", "main")
-                                )
-                            )
-                        }
-                    }
-                    if (arr.length() < 100) break
+                    repos.addAll(Repo.parseList(arr))
+                    if (arr.length() == 0 || arr.length() < 100) break
                     page++
                 }
                 is ApiResult.Error -> return r
@@ -157,15 +204,13 @@ class GitHubClient(private val token: String) {
     fun listBranches(owner: String, repo: String): ApiResult<List<Branch>> {
         val branches = mutableListOf<Branch>()
         var page = 1
-        while (true) {
+        while (page <= MAX_PAGES) {
             val url = "https://api.github.com/repos/$owner/$repo/branches?per_page=100&page=$page"
             when (val r = execute<JSONArray>(url, "GET")) {
                 is ApiResult.Success -> {
                     val arr = r.data
-                    for (i in 0 until arr.length()) {
-                        branches.add(Branch(name = arr.getJSONObject(i).getString("name")))
-                    }
-                    if (arr.length() < 100) break
+                    branches.addAll(Branch.parseList(arr))
+                    if (arr.length() == 0 || arr.length() < 100) break
                     page++
                 }
                 is ApiResult.Error -> return r
@@ -286,4 +331,9 @@ class GitHubClient(private val token: String) {
 
     /** Tree entry used when building the new commit tree. */
     data class TreeEntry(val path: String, val sha: String, val mode: String = "100644")
+
+    companion object {
+        /** Safety cap for paginated list endpoints (100 pages × 100 items). */
+        private const val MAX_PAGES = 100
+    }
 }

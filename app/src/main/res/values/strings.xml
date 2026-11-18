@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">ZipPush</string>
+    <string name="app_name">Zip2Push</string>
     <string name="app_tagline">Push ZIP archives and files to GitHub — no PC, no Git commands.</string>
     <string name="status_ready">Ready. Connect a GitHub account to begin.</string>
     <string name="step1_title">GitHub account</string>
@@ -20,6 +20,9 @@
     <string name="badge_private">Private</string>
     <string name="branch_hint">Branch</string>
     <string name="create_branch_action">Create new branch…</string>
+    <string name="create_repo_action">Create new repository…</string>
+    <string name="create_repo_opening">Opening github.com/new…</string>
+    <string name="unexpected_error">Something went wrong (recovered): %1$s</string>
     <string name="create_branch_title">Create branch</string>
     <string name="new_branch_dialog_hint">Branch name</string>
     <string name="create_branch_dialog_helper">New branch starts from the selected branch.</string>
@@ -64,10 +67,10 @@
     <string name="menu_about">About</string>
     <string name="menu_donations">Donations</string>
     <string name="donations_coming_soon">Donations are coming soon. Thanks for your support!</string>
-    <string name="about_title">About ZipPush</string>
+    <string name="about_title">About Zip2Push</string>
     <string name="about_version_label">Version</string>
     <string name="about_version_format">Version %1$s</string>
-    <string name="about_body">ZipPush pushes ZIP archives, files and folders to any GitHub repository straight from your phone — no PC, no Git commands. Pick what to upload, choose a repo and branch, and it lands as one clean commit.</string>
+    <string name="about_body">Zip2Push pushes ZIP archives, files and folders to any GitHub repository straight from your phone — no PC, no Git commands. Pick what to upload, choose a repo and branch, and it lands as one clean commit.</string>
     <string name="about_privacy_title">Privacy</string>
     <string name="about_privacy_body">Your Personal Access Token is stored encrypted on this device only and is sent exclusively to GitHub\'s own API. Nothing else is collected, tracked or shared.</string>
     <string name="about_oss_title">Open source</string>

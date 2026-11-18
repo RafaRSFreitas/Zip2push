@@ -33,8 +33,11 @@ import com.google.android.material.textfield.TextInputLayout
 import com.zippush.app.engine.UploadEngine
 import com.zippush.app.net.GitHubClient
 import com.zippush.app.storage.TokenVault
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -72,13 +75,45 @@ class MainActivity : AppCompatActivity() {
     private var client: GitHubClient? = null
     private var engine: UploadEngine? = null
     private val repos = mutableListOf<GitHubClient.Repo>()
+
+    /** Dropdown model: a repository row, or the create-repository action. */
+    private sealed class RepoItem {
+        class Repo(val repo: GitHubClient.Repo) : RepoItem()
+        object CreateAction : RepoItem()
+    }
+    private val repoItems = mutableListOf<RepoItem>()
     internal var selectedRepo: GitHubClient.Repo? = null
     private val branches = mutableListOf<GitHubClient.Branch>()
     internal var selectedBranch: GitHubClient.Branch? = null
     internal val tracker = SelectionTracker()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(Dispatchers.Main)
+
+    /**
+     * Last-resort safety net: any exception escaping a coroutine shows on
+     * the status line instead of killing the app ("app closes by itself").
+     */
+    private val crashGuard = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("Zip2Push", "Uncaught coroutine error", throwable)
+        if (alive) {
+            setStatus(
+                getString(R.string.unexpected_error, throwable.message ?: "unknown"),
+                StatusKind.ERROR
+            )
+            setBusy(false)
+        }
+    }
+
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + crashGuard)
     private var accountsDialog: android.app.Dialog? = null
+
+    /** True while this activity instance is still usable for UI updates. */
+    private var alive = true
+
+    override fun onDestroy() {
+        alive = false
+        scope.cancel()
+        super.onDestroy()
+    }
 
     /** Last pushed commit URL, used by the "View on GitHub" button. */
     internal var lastCommitUrl: String? = null
@@ -139,7 +174,15 @@ class MainActivity : AppCompatActivity() {
         accountBtn.setOnClickListener { showAccountsPopup() }
 
         repoDropdown.setOnItemClickListener { _, _, position, _ ->
-            scope.launch { onRepoSelected(position) }
+            when (val item = repoItems.getOrNull(position)) {
+                is RepoItem.Repo -> scope.launch { onRepoSelected(item.repo) }
+                RepoItem.CreateAction -> {
+                    // Restore the selected repo text (the click would clear it).
+                    repoDropdown.setText(selectedRepo?.fullName ?: "", false)
+                    openCreateRepoInBrowser()
+                }
+                null -> Unit
+            }
         }
 
         branchDropdown.setOnItemClickListener { _, _, position, _ ->
@@ -193,6 +236,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Shows [message] on the fixed bottom status line. Always visible. */
     private fun setStatus(message: String, kind: StatusKind = StatusKind.INFO) {
+        if (!alive) return
         statusText.text = message
         val (iconRes, tintRes) = when (kind) {
             StatusKind.INFO -> R.drawable.ic_info to R.color.status_text
@@ -480,6 +524,7 @@ class MainActivity : AppCompatActivity() {
         client = null
         engine = null
         repos.clear()
+        repoItems.clear()
         branches.clear()
         branchItems.clear()
         selectedRepo = null
@@ -525,18 +570,21 @@ class MainActivity : AppCompatActivity() {
         val c = client ?: return
         when (val r = withContext(Dispatchers.IO) { c.listRepos() }) {
             is GitHubClient.ApiResult.Success -> {
+                if (!alive) return
                 repos.clear()
                 repos.addAll(r.data)
-                repoDropdown.setAdapter(RepoAdapter())
+                updateRepoItems()
                 setBusy(false)
                 if (repos.isEmpty()) {
                     setStatus(getString(R.string.repos_error, "no accessible repositories"), StatusKind.INFO)
                 } else if (repos.none { it.private }) {
                     setStatus(getString(R.string.repos_loaded_public_only, repos.size), StatusKind.INFO)
-                    repoDropdown.showDropDown()
+                    // The activity can be torn down while the list loads
+                    // (user backs out); showing a dropdown then crashes.
+                    if (alive && !isFinishing) repoDropdown.showDropDown()
                 } else {
                     setStatus(getString(R.string.repos_loaded, repos.size), StatusKind.SUCCESS)
-                    repoDropdown.showDropDown()
+                    if (alive && !isFinishing) repoDropdown.showDropDown()
                 }
             }
             is GitHubClient.ApiResult.Error -> {
@@ -546,17 +594,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Rebuilds the repo dropdown model: repositories + the create action at the end. */
+    private fun updateRepoItems() {
+        repoItems.clear()
+        repos.forEach { repoItems.add(RepoItem.Repo(it)) }
+        repoItems.add(RepoItem.CreateAction)
+        repoDropdown.setAdapter(RepoAdapter())
+    }
+
     /** Dropdown adapter rendering repo name + Public/Private badge. */
-    private inner class RepoAdapter : ArrayAdapter<GitHubClient.Repo>(
-        this@MainActivity, R.layout.item_repo, repos
+    private inner class RepoAdapter : ArrayAdapter<RepoItem>(
+        this@MainActivity, R.layout.item_repo, repoItems
     ) {
         /** Pass-through filter: the dropdown must always list every repo. */
         override fun getFilter(): Filter {
             return object : Filter() {
                 override fun performFiltering(constraint: CharSequence?): FilterResults {
                     val res = FilterResults()
-                    res.values = repos.toList()
-                    res.count = repos.size
+                    res.values = repoItems.toList()
+                    res.count = repoItems.size
                     return res
                 }
                 override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
@@ -566,29 +622,43 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val v = convertView ?: LayoutInflater.from(context)
-                .inflate(R.layout.item_repo, parent, false)
-            val repo = getItem(position) ?: return v
-            v.findViewById<TextView>(R.id.repoNameText).text = repo.fullName
-            val badge = v.findViewById<TextView>(R.id.repoTypeBadge)
-            if (repo.private) {
-                badge.text = getString(R.string.badge_private)
-                badge.setBackgroundResource(R.drawable.bg_badge_private)
-            } else {
-                badge.text = getString(R.string.badge_public)
-                badge.setBackgroundResource(R.drawable.bg_badge_public)
+            return when (val item = getItem(position)) {
+                is RepoItem.Repo -> {
+                    val v = convertView?.takeIf { it.tag == "repo" }
+                        ?: LayoutInflater.from(context)
+                            .inflate(R.layout.item_repo, parent, false)
+                            .also { it.tag = "repo" }
+                    v.findViewById<TextView>(R.id.repoNameText).text = item.repo.fullName
+                    val badge = v.findViewById<TextView>(R.id.repoTypeBadge)
+                    if (item.repo.private) {
+                        badge.text = getString(R.string.badge_private)
+                        badge.setBackgroundResource(R.drawable.bg_badge_private)
+                    } else {
+                        badge.text = getString(R.string.badge_public)
+                        badge.setBackgroundResource(R.drawable.bg_badge_public)
+                    }
+                    v
+                }
+                RepoItem.CreateAction -> {
+                    val v = LayoutInflater.from(context)
+                        .inflate(R.layout.item_action, parent, false)
+                    v.findViewById<ImageView>(R.id.actionIcon)
+                        .setImageResource(R.drawable.ic_add)
+                    v.findViewById<TextView>(R.id.actionText).text =
+                        getString(R.string.create_repo_action)
+                    v
+                }
+                null -> View(context)
             }
-            return v
         }
     }
 
-    private suspend fun onRepoSelected(position: Int) {
-        selectedRepo = repos.getOrNull(position) ?: return
+    private suspend fun onRepoSelected(repo: GitHubClient.Repo) {
+        selectedRepo = repo
         selectedBranch = null
         branchDropdown.setText("", false)
         viewRepoBtn.visibility = View.GONE
         lastCommitUrl = null
-        val repo = selectedRepo ?: return
         setBusy(true)
         setStatus("Loading branches of ${repo.name}…", StatusKind.PROGRESS)
         val c = client ?: return
@@ -670,6 +740,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Opens GitHub's create-repository page in the browser. */
+    private fun openCreateRepoInBrowser() {
+        setStatus(getString(R.string.create_repo_opening), StatusKind.INFO)
+        val intent = android.content.Intent(
+            android.content.Intent.ACTION_VIEW,
+            Uri.parse("https://github.com/new")
+        )
+        runCatching { startActivity(intent) }
+            .onFailure {
+                setStatus(
+                    getString(R.string.repos_error, "no browser available"),
+                    StatusKind.ERROR
+                )
+            }
+    }
+
     /** Dialog for entering a new branch name; creates it on GitHub. */
     private fun showCreateBranchDialog() {
         val input = EditText(this)
@@ -749,6 +835,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetTextI18n")
     internal fun refreshSelectionSummary() {
+        if (!alive) return
         val zip = tracker.zip
         val files = tracker.filesWithPaths
         selectionText.visibility = if (zip == null && files.isEmpty()) View.GONE else View.VISIBLE
@@ -880,6 +967,12 @@ class MainActivity : AppCompatActivity() {
                     lastCommitUrl = result.commitUrl
                     viewRepoBtn.visibility = View.VISIBLE
                     Toast.makeText(this@MainActivity, "Pushed ✓", Toast.LENGTH_SHORT).show()
+                    // Clear the picked files so it is obvious the upload is
+                    // done and the user can select the next one. The repo /
+                    // branch selection stays (users usually push again to
+                    // the same place); only the file selection resets.
+                    tracker.clear()
+                    refreshSelectionSummary()
                 }
                 is UploadEngine.PushResult.Failure -> {
                     setStatus(
@@ -911,6 +1004,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setBusy(busy: Boolean) {
+        if (!alive) return
         progress.visibility = if (busy) View.VISIBLE else View.GONE
         pushBtn.isEnabled = !busy
         zipBtn.isEnabled = !busy
