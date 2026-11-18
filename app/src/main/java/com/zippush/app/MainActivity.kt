@@ -11,6 +11,7 @@ import android.provider.DocumentsContract
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Filter
@@ -69,6 +70,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var selectionText: TextView
     private lateinit var overflowBtn: ImageButton
     private lateinit var themeToggleBtn: ImageButton
+    private lateinit var reloadBtn: ImageButton
+    private lateinit var pickerRow: LinearLayout
 
     // ------------------------------------------------------------------ state
     private lateinit var vault: TokenVault
@@ -78,8 +81,19 @@ class MainActivity : AppCompatActivity() {
 
     /** Dropdown model: a repository row, or the create-repository action. */
     private sealed class RepoItem {
-        class Repo(val repo: GitHubClient.Repo) : RepoItem()
-        object CreateAction : RepoItem()
+        class Repo(val repo: GitHubClient.Repo) : RepoItem() {
+            /** The dropdown writes toString() of the picked item into the
+             *  field — must be the repo name, not an object address. */
+            override fun toString() = repo.fullName
+        }
+        object CreateAction : RepoItem() {
+            override fun toString() = ""
+        }
+    }
+
+    /** Test hook: the text the dropdown would write for a repo item. */
+    internal object RepoItemForTest {
+        fun repoItemText(repo: GitHubClient.Repo): String = RepoItem.Repo(repo).toString()
     }
     private val repoItems = mutableListOf<RepoItem>()
     internal var selectedRepo: GitHubClient.Repo? = null
@@ -163,6 +177,19 @@ class MainActivity : AppCompatActivity() {
         selectionText = findViewById(R.id.selectionText)
         overflowBtn = findViewById(R.id.overflowBtn)
         themeToggleBtn = findViewById(R.id.themeToggleBtn)
+        reloadBtn = findViewById(R.id.reloadBtn)
+        pickerRow = findViewById(R.id.pickerRow)
+
+        // Enforce EXACT equality of the Files / Folder buttons. LinearLayout
+        // weight rounding can differ by a pixel on odd-width rows; after the
+        // row is laid out we clamp both buttons to the same width/height.
+        pickerRow.viewTreeObserver.addOnGlobalLayoutListener(
+            object : ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    equalizePickerButtons()
+                }
+            }
+        )
 
         // Apply the persisted theme override before first draw.
         applyTheme(prefThemeMode)
@@ -219,6 +246,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         overflowBtn.setOnClickListener { showOverflowMenu(it) }
+        reloadBtn.setOnClickListener { onReloadClicked() }
 
         // Auto-connect to the active or pending account on launch.
         val token = vault.loadToken()
@@ -247,6 +275,37 @@ class MainActivity : AppCompatActivity() {
         statusIcon.setImageResource(iconRes)
         statusIcon.imageTintList =
             ColorStateList.valueOf(ContextCompat.getColor(this, tintRes))
+    }
+
+    /**
+     * Clamps the Files / Folder buttons to identical width/height and
+     * balances the leftover pixel into the row's outer padding (keeps the
+     * pair centered). Weights are dropped once the width is fixed — a
+     * LinearLayout re-derives weighted children's width on every measure
+     * pass, which would undo the correction.
+     */
+    internal fun equalizePickerButtons() {
+        if (filesBtn.width <= 0 || folderBtn.width <= 0) return
+        if (filesBtn.width == folderBtn.width &&
+            filesBtn.height == folderBtn.height
+        ) return
+        val w = minOf(filesBtn.width, folderBtn.width)
+        val h = maxOf(filesBtn.height, folderBtn.height)
+        listOf(filesBtn, folderBtn).forEach { b ->
+            val lp = b.layoutParams as LinearLayout.LayoutParams
+            lp.width = w
+            lp.height = h
+            lp.weight = 0f
+            b.layoutParams = lp
+        }
+        val innerMargins =
+            (filesBtn.layoutParams as ViewGroup.MarginLayoutParams).marginEnd +
+            (folderBtn.layoutParams as ViewGroup.MarginLayoutParams).marginStart
+        val leftover = pickerRow.width - 2 * w - innerMargins
+        if (leftover > 0) pickerRow.setPadding(leftover / 2, 0, leftover / 2, 0)
+        // On a device the next traversal applies the new sizes; in tests the
+        // caller drives a measure/layout pass on the decor view.
+        pickerRow.requestLayout()
     }
 
     // ------------------------------------------------------------- overflow menu
@@ -564,7 +623,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun loadRepos() {
+    private suspend fun loadRepos(reopenDropdown: Boolean = true) {
         setBusy(true)
         setStatus("Loading repositories…", StatusKind.PROGRESS)
         val c = client ?: return
@@ -581,10 +640,10 @@ class MainActivity : AppCompatActivity() {
                     setStatus(getString(R.string.repos_loaded_public_only, repos.size), StatusKind.INFO)
                     // The activity can be torn down while the list loads
                     // (user backs out); showing a dropdown then crashes.
-                    if (alive && !isFinishing) repoDropdown.showDropDown()
+                    if (reopenDropdown && alive && !isFinishing) repoDropdown.showDropDown()
                 } else {
                     setStatus(getString(R.string.repos_loaded, repos.size), StatusKind.SUCCESS)
-                    if (alive && !isFinishing) repoDropdown.showDropDown()
+                    if (reopenDropdown && alive && !isFinishing) repoDropdown.showDropDown()
                 }
             }
             is GitHubClient.ApiResult.Error -> {
@@ -847,10 +906,8 @@ class MainActivity : AppCompatActivity() {
                 if (files.size > 4) appendLine("  … +${files.size - 4} more")
             }
         }.trim()
-        // Legacy button labels kept in sync for compatibility.
-        zipBtn.text = if (zip != null) "ZIP: selected (tap to change)" else getString(R.string.add_zip)
-        filesBtn.text = if (files.isNotEmpty()) "Files: ${files.size} (tap to change)" else getString(R.string.add_files)
-        folderBtn.text = if (files.isNotEmpty()) "Folder: ${files.size} files (tap to change)" else getString(R.string.add_folder)
+        // The selection details live in selectionText above; the buttons keep
+        // their fixed labels so both bottom buttons stay the same size.
     }
 
     /**
@@ -880,6 +937,68 @@ class MainActivity : AppCompatActivity() {
             setStatus(getString(R.string.selection_cleared), StatusKind.INFO)
         } else {
             setStatus(getString(R.string.nothing_to_clear), StatusKind.INFO)
+        }
+    }
+
+    // ------------------------------------------------------------- reload
+
+    /**
+     * Reload button: re-fetches the repository list (and the branches of the
+     * selected repo) so anything created or deleted on GitHub shows up.
+     * If the selected repo or branch was deleted, the selection is cleared
+     * and the user is told why.
+     */
+    private fun onReloadClicked() {
+        if (client == null) {
+            setStatus(getString(R.string.reload_not_connected), StatusKind.INFO)
+            return
+        }
+        setBusy(true)
+        setStatus(getString(R.string.reload_in_progress), StatusKind.PROGRESS)
+        scope.launch {
+            loadRepos(reopenDropdown = false)
+            if (alive && selectedRepo != null) {
+                val stillThere = repos.firstOrNull { it.fullName == selectedRepo!!.fullName }
+                if (stillThere == null) {
+                    // The selected repo was deleted on GitHub.
+                    selectedRepo = null
+                    selectedBranch = null
+                    repoDropdown.setText("", false)
+                    branchDropdown.setText("", false)
+                    branches.clear()
+                    updateBranchItems()
+                    setStatus(getString(R.string.reload_repo_gone), StatusKind.INFO)
+                } else {
+                    selectedRepo = stillThere
+                    // Re-fetch branches of the still-selected repo.
+                    val c = client ?: return@launch
+                    setStatus(
+                        getString(R.string.branches_loading, stillThere.name),
+                        StatusKind.PROGRESS
+                    )
+                    when (val r = withContext(Dispatchers.IO) {
+                        c.listBranches(stillThere.owner, stillThere.name)
+                    }) {
+                        is GitHubClient.ApiResult.Success -> {
+                            branches.clear()
+                            branches.addAll(r.data)
+                            updateBranchItems()
+                            val branchGone = selectedBranch != null &&
+                                    branches.none { it.name == selectedBranch!!.name }
+                            if (branchGone) {
+                                setStatus(getString(R.string.reload_branch_gone), StatusKind.INFO)
+                            } else {
+                                setStatus(getString(R.string.reload_done, repos.size), StatusKind.SUCCESS)
+                            }
+                        }
+                        is GitHubClient.ApiResult.Error -> {
+                            setBusy(false)
+                            setStatus(getString(R.string.branches_error, r.message), StatusKind.ERROR)
+                        }
+                    }
+                }
+            }
+            setBusy(false)
         }
     }
 
@@ -967,11 +1086,12 @@ class MainActivity : AppCompatActivity() {
                     lastCommitUrl = result.commitUrl
                     viewRepoBtn.visibility = View.VISIBLE
                     Toast.makeText(this@MainActivity, "Pushed ✓", Toast.LENGTH_SHORT).show()
-                    // Clear the picked files so it is obvious the upload is
-                    // done and the user can select the next one. The repo /
-                    // branch selection stays (users usually push again to
-                    // the same place); only the file selection resets.
+                    // Clear the picked files AND the commit message so it is
+                    // obvious the upload is done and the user starts fresh
+                    // with the next one. The repo / branch selection stays
+                    // (users usually push again to the same place).
                     tracker.clear()
+                    commitMessageInput.setText("")
                     refreshSelectionSummary()
                 }
                 is UploadEngine.PushResult.Failure -> {

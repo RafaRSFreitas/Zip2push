@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">Zip2Push</string>
-    <string name="app_tagline">Push ZIP archives and files to GitHub — no PC, no Git commands.</string>
     <string name="status_ready">Ready. Connect a GitHub account to begin.</string>
     <string name="step1_title">GitHub account</string>
     <string name="connect_account">Connect your GitHub account</string>
@@ -23,6 +22,13 @@
     <string name="create_repo_action">Create new repository…</string>
     <string name="create_repo_opening">Opening github.com/new…</string>
     <string name="unexpected_error">Something went wrong (recovered): %1$s</string>
+    <string name="reload_desc">Refresh repositories and branches</string>
+    <string name="reload_in_progress">Refreshing repositories and branches…</string>
+    <string name="reload_not_connected">Connect a GitHub account first.</string>
+    <string name="reload_done">Refreshed — %1$d repositories up to date.</string>
+    <string name="reload_repo_gone">The selected repository no longer exists on GitHub; the selection was cleared.</string>
+    <string name="reload_branch_gone">The selected branch no longer exists; reselect a branch.</string>
+    <string name="branches_loading">Loading branches of %1$s…</string>
     <string name="create_branch_title">Create branch</string>
     <string name="new_branch_dialog_hint">Branch name</string>
     <string name="create_branch_dialog_helper">New branch starts from the selected branch.</string>
