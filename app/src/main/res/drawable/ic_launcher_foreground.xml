@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher foreground: white arrow-up + base, centered in the safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.2"
+        android:scaleY="2.2"
+        android:translateX="27.6"
+        android:translateY="27.6">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M12,3 L17,8 L14.59,8 L12,5.41 L9.41,8 L7,8 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M11,9 L13,9 L13,16 L11,16 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M6,18 L6,20 A1,1 0 0,0 7,21 L17,21 A1,1 0 0,0 18,20 L18,18 L16,18 L16,19 L8,19 L8,18 Z" />
+    </group>
+</vector>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Full night variant of Theme.ZipPush. Styles are NOT merged across
+         configuration qualifiers: this must repeat every item from
+         values/themes.xml, with the system-bar light flags off. -->
+
+    <style name="Theme.ZipPush" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- shadcn token -> M3 attribute mapping -->
+        <item name="colorPrimary">@color/jw_primary</item>
+        <item name="colorOnPrimary">@color/jw_primary_foreground</item>
+        <item name="colorPrimaryContainer">@color/jw_secondary</item>
+        <item name="colorOnPrimaryContainer">@color/jw_secondary_foreground</item>
+        <item name="colorSecondary">@color/jw_secondary</item>
+        <item name="colorOnSecondary">@color/jw_secondary_foreground</item>
+        <item name="colorSecondaryContainer">@color/jw_secondary</item>
+        <item name="colorOnSecondaryContainer">@color/jw_secondary_foreground</item>
+        <item name="colorTertiaryContainer">@color/jw_muted</item>
+        <item name="colorOnTertiaryContainer">@color/jw_muted_foreground</item>
+        <item name="colorSurface">@color/jw_card</item>
+        <item name="colorOnSurface">@color/jw_card_foreground</item>
+        <item name="colorSurfaceVariant">@color/jw_muted</item>
+        <item name="colorOnSurfaceVariant">@color/jw_muted_foreground</item>
+        <item name="colorSurfaceContainer">@color/jw_card</item>
+        <item name="colorSurfaceContainerHigh">@color/jw_popover</item>
+        <item name="colorSurfaceContainerHighest">@color/jw_popover</item>
+        <item name="android:colorBackground">@color/jw_background</item>
+        <item name="colorError">@color/jw_destructive</item>
+        <item name="colorOnError">#FFFFFF</item>
+        <item name="colorOutline">@color/jw_border</item>
+        <item name="colorOutlineVariant">@color/jw_border</item>
+
+        <!-- edges: system bars match the background -->
+        <item name="android:statusBarColor">@color/jw_background</item>
+        <item name="android:navigationBarColor">@color/jw_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+
+        <!-- Geist everywhere -->
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.ZipPush.HeadlineSmall</item>
+        <item name="textAppearanceTitleMedium">@style/TextAppearance.ZipPush.TitleMedium</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.ZipPush.BodyMedium</item>
+        <item name="textAppearanceBodySmall">@style/TextAppearance.ZipPush.BodySmall</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.ZipPush.LabelLarge</item>
+        <item name="textAppearanceLabelMedium">@style/TextAppearance.ZipPush.LabelMedium</item>
+
+        <!-- widgets -->
+        <item name="materialCardViewStyle">@style/Widget.ZipPush.CardView</item>
+        <item name="textInputStyle">@style/Widget.ZipPush.TextInputLayout</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.ZipPush.MaterialAlertDialog</item>
+        <item name="popupMenuStyle">@style/Widget.ZipPush.PopupMenu</item>
+        <item name="listPopupWindowStyle">@style/Widget.ZipPush.PopupMenu.ListPopupWindow</item>
+    </style>
+</resources>

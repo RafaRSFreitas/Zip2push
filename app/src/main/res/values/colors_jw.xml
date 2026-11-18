@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light (day) values of the JornalWeb zinc palette.
+         oklch originals noted in comments; hex via oklch->sRGB conversion. -->
+    <color name="jw_background">#FFFFFF</color>          <!-- oklch(100% 0 0) -->
+    <color name="jw_foreground">#0A0A0A</color>          <!-- oklch(14.5% 0 0) -->
+    <color name="jw_card">#FFFFFF</color>                <!-- oklch(100% 0 0) -->
+    <color name="jw_card_foreground">#0A0A0A</color>     <!-- oklch(14.5% 0 0) -->
+    <color name="jw_popover">#FFFFFF</color>             <!-- oklch(100% 0 0) -->
+    <color name="jw_popover_foreground">#0A0A0A</color>  <!-- oklch(14.5% 0 0) -->
+    <color name="jw_primary">#171717</color>             <!-- oklch(20.5% 0 0) -->
+    <color name="jw_primary_foreground">#FAFAFA</color>  <!-- oklch(98.5% 0 0) -->
+    <color name="jw_secondary">#F5F5F5</color>           <!-- oklch(97% 0 0) -->
+    <color name="jw_secondary_foreground">#171717</color><!-- oklch(20.5% 0 0) -->
+    <color name="jw_muted">#F5F5F5</color>               <!-- oklch(97% 0 0) -->
+    <color name="jw_muted_foreground">#737373</color>    <!-- oklch(55.6% 0 0) -->
+    <color name="jw_accent">#F5F5F5</color>              <!-- oklch(97% 0 0) -->
+    <color name="jw_accent_foreground">#171717</color>   <!-- oklch(20.5% 0 0) -->
+    <color name="jw_destructive">#E7000B</color>         <!-- oklch(57.7% .245 27.325) -->
+    <color name="jw_border">#E5E5E5</color>              <!-- oklch(92.2% 0 0) -->
+    <color name="jw_input">#E5E5E5</color>               <!-- oklch(92.2% 0 0) -->
+    <color name="jw_ring">#A1A1A1</color>                <!-- oklch(70.8% 0 0) -->
+    <!-- JornalWeb light form fields: nearly-transparent fill + a border
+         darker than the generic border token so fields stay findable. -->
+    <color name="jw_input_fill">#FAFAFA</color>          <!-- slight fill -->
+    <color name="jw_input_border">#C8C8C8</color>        <!-- zinc-350 -->
+    <color name="jw_input_border_focus">#71717A</color>  <!-- zinc-500, focus -->
+    <color name="jw_input_hint">#737373</color>          <!-- muted_foreground -->
+    <color name="jw_input_text">#0A0A0A</color>          <!-- foreground -->
+    <color name="jw_badge_public_bg">#F5F5F5</color>    <!-- secondary/muted -->
+    <color name="jw_badge_public_text">#3F3F46</color>  <!-- zinc-700 -->
+    <color name="jw_badge_private_bg">#FEF2F2</color>   <!-- red-50 -->
+    <color name="jw_badge_private_text">#B91C1C</color> <!-- red-700 -->
+</resources>

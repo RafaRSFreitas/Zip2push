@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ============================================================
+         JornalWeb design system applied via Material 3 DayNight.
+         shadcn/ui zinc tokens (values/colors_jw.xml, values-night/).
+         Font: Geist / Geist Mono (variable, res/font).
+         Base radius: 10dp (JornalWeb "radius" var: .625rem).
+         ============================================================ -->
+
+    <!-- base theme: follows system day/night -->
+    <style name="Theme.ZipPush" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- shadcn token -> M3 attribute mapping -->
+        <item name="colorPrimary">@color/jw_primary</item>
+        <item name="colorOnPrimary">@color/jw_primary_foreground</item>
+        <item name="colorPrimaryContainer">@color/jw_secondary</item>
+        <item name="colorOnPrimaryContainer">@color/jw_secondary_foreground</item>
+        <item name="colorSecondary">@color/jw_secondary</item>
+        <item name="colorOnSecondary">@color/jw_secondary_foreground</item>
+        <item name="colorSecondaryContainer">@color/jw_secondary</item>
+        <item name="colorOnSecondaryContainer">@color/jw_secondary_foreground</item>
+        <item name="colorTertiaryContainer">@color/jw_muted</item>
+        <item name="colorOnTertiaryContainer">@color/jw_muted_foreground</item>
+        <item name="colorSurface">@color/jw_card</item>
+        <item name="colorOnSurface">@color/jw_card_foreground</item>
+        <item name="colorSurfaceVariant">@color/jw_muted</item>
+        <item name="colorOnSurfaceVariant">@color/jw_muted_foreground</item>
+        <item name="colorSurfaceContainer">@color/jw_card</item>
+        <item name="colorSurfaceContainerHigh">@color/jw_popover</item>
+        <item name="colorSurfaceContainerHighest">@color/jw_popover</item>
+        <item name="android:colorBackground">@color/jw_background</item>
+        <item name="colorError">@color/jw_destructive</item>
+        <item name="colorOnError">#FFFFFF</item>
+        <item name="colorOutline">@color/jw_border</item>
+        <item name="colorOutlineVariant">@color/jw_border</item>
+
+        <!-- edges: system bars match the background -->
+        <item name="android:statusBarColor">@color/jw_background</item>
+        <item name="android:navigationBarColor">@color/jw_background</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+
+        <!-- Geist everywhere -->
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.ZipPush.HeadlineSmall</item>
+        <item name="textAppearanceTitleMedium">@style/TextAppearance.ZipPush.TitleMedium</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.ZipPush.BodyMedium</item>
+        <item name="textAppearanceBodySmall">@style/TextAppearance.ZipPush.BodySmall</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.ZipPush.LabelLarge</item>
+        <item name="textAppearanceLabelMedium">@style/TextAppearance.ZipPush.LabelMedium</item>
+
+        <!-- widgets -->
+        <item name="materialCardViewStyle">@style/Widget.ZipPush.CardView</item>
+        <item name="textInputStyle">@style/Widget.ZipPush.TextInputLayout</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.ZipPush.MaterialAlertDialog</item>
+        <item name="popupMenuStyle">@style/Widget.ZipPush.PopupMenu</item>
+        <item name="listPopupWindowStyle">@style/Widget.ZipPush.PopupMenu.ListPopupWindow</item>
+    </style>
+
+    <!-- text appearances (sizes from JornalWeb) -->
+    <!-- JornalWeb type scale: xs .75rem/12sp, sm .875rem/14sp, base 1rem/16sp,
+         lg 1.125rem/18sp, xl 1.25rem/20sp; medium 500, semibold 600, bold 700;
+         headings tracking-tight (-0.025em). -->
+    <style name="TextAppearance.ZipPush.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.025</item>
+    </style>
+    <style name="TextAppearance.ZipPush.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.025</item>
+    </style>
+    <style name="TextAppearance.ZipPush.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+    <style name="TextAppearance.ZipPush.BodySmall" parent="TextAppearance.Material3.BodySmall">
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+    <style name="TextAppearance.ZipPush.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+    <style name="TextAppearance.ZipPush.LabelMedium" parent="TextAppearance.Material3.LabelMedium">
+        <item name="fontFamily">@font/geist_variable</item>
+        <item name="android:fontFamily">@font/geist_variable</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- widgets -->
+    <style name="Widget.ZipPush.CardView" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">@color/jw_card</item>
+        <item name="cardCornerRadius">10dp</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="strokeColor">@color/jw_border</item>
+        <item name="cardElevation">0dp</item>
+    </style>
+    <style name="Widget.ZipPush.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxStrokeColor">@color/input_stroke</item>
+        <item name="boxStrokeErrorColor">@color/jw_destructive</item>
+        <item name="boxBackgroundColor">@color/jw_input_fill</item>
+        <item name="hintTextColor">@color/jw_input_hint</item>
+        <item name="android:textColorHint">@color/jw_input_hint</item>
+        <item name="boxCornerRadiusTopStart">10dp</item>
+        <item name="boxCornerRadiusTopEnd">10dp</item>
+        <item name="boxCornerRadiusBottomStart">10dp</item>
+        <item name="boxCornerRadiusBottomEnd">10dp</item>
+    </style>
+    <style name="Widget.ZipPush.TextInputLayout.ExposedDropdown" parent="Widget.ZipPush.TextInputLayout">
+        <item name="endIconMode">dropdown_menu</item>
+    </style>
+
+    <!-- Default button = shadcn primary (zinc-900 bg, near-white text) -->
+    <style name="Widget.ZipPush.Button" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/jw_primary</item>
+        <item name="android:textColor">@color/jw_primary_foreground</item>
+        <item name="iconTint">@color/jw_primary_foreground</item>
+        <item name="cornerRadius">10dp</item>
+    </style>
+
+    <!-- Outlined button = shadcn outline variant -->
+    <style name="Widget.ZipPush.Button.OutlinedButton" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="strokeColor">@color/jw_border</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:textColor">@color/jw_foreground</item>
+        <item name="iconTint">@color/jw_foreground</item>
+        <item name="cornerRadius">10dp</item>
+    </style>
+
+    <!-- Text button = shadcn ghost variant -->
+    <style name="Widget.ZipPush.Button.TextButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/jw_foreground</item>
+        <item name="iconTint">@color/jw_foreground</item>
+        <item name="cornerRadius">10dp</item>
+    </style>
+
+    <!-- Tonal = shadcn secondary variant -->
+    <style name="Widget.ZipPush.Button.TonalButton" parent="Widget.Material3.Button.TonalButton">
+        <item name="backgroundTint">@color/jw_secondary</item>
+        <item name="android:textColor">@color/jw_secondary_foreground</item>
+        <item name="iconTint">@color/jw_secondary_foreground</item>
+        <item name="cornerRadius">10dp</item>
+    </style>
+
+    <!-- Dialogs: popover tokens -->
+    <style name="ThemeOverlay.ZipPush.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurfaceContainerHigh">@color/jw_popover</item>
+        <item name="colorPrimary">@color/jw_primary</item>
+        <item name="colorOnPrimary">@color/jw_primary_foreground</item>
+        <item name="colorOnSurface">@color/jw_popover_foreground</item>
+        <item name="colorSurface">@color/jw_popover</item>
+    </style>
+
+    <!-- Dropdown / popup lists -->
+    <style name="Widget.ZipPush.PopupMenu" parent="Widget.Material3.PopupMenu.ContextMenu">
+        <item name="android:popupBackground">@drawable/bg_popup</item>
+    </style>
+    <style name="Widget.ZipPush.PopupMenu.ListPopupWindow" parent="Widget.Material3.PopupMenu.ListPopupWindow">
+        <item name="android:popupBackground">@drawable/bg_popup</item>
+    </style>
+
+</resources>
