@@ -184,6 +184,19 @@
                             android:gravity="top" />
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <!-- Commit date row: defaults to "Now"; tap to open the
+                         backdate picker (date + time + warning). -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/backdateBtn"
+                        style="@style/Widget.ZipPush.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:layout_gravity="end"
+                        android:maxLines="1"
+                        android:text="@string/backdate_now"
+                        app:icon="@drawable/ic_calendar_clock" />
+
                     <!-- ZIP picker, full width on top -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/zipBtn"

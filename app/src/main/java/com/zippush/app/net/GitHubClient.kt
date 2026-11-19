@@ -299,13 +299,21 @@ class GitHubClient(private val token: String) {
         }
     }
 
-    /** POST /repos/{owner}/{repo}/git/commits */
+    /**
+     * POST /repos/{owner}/{repo}/git/commits
+     *
+     * [authorDate] (ISO-8601, e.g. 2024-03-01T14:30:00Z) makes the commit
+     * retroactive: GitHub shows it under that date. The committer date —
+     * what actually orders history and feeds the activity/contribution
+     * graphs — stays the real upload time.
+     */
     fun createCommit(
         owner: String,
         repo: String,
         message: String,
         treeSha: String,
-        parentShas: List<String>
+        parentShas: List<String>,
+        authorDate: String? = null
     ): ApiResult<String> {
         val parents = JSONArray()
         parentShas.forEach { parents.put(it) }
@@ -313,6 +321,9 @@ class GitHubClient(private val token: String) {
             .put("message", message)
             .put("tree", treeSha)
             .put("parents", parents)
+        if (authorDate != null) {
+            body.put("author", JSONObject().put("date", authorDate))
+        }
         return when (val r = execute<JSONObject>(
             "https://api.github.com/repos/$owner/$repo/git/commits", "POST", body.toString()
         )) {

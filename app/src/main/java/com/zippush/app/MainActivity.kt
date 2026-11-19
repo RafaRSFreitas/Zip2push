@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.ArrayAdapter
+import android.widget.DatePicker
 import android.widget.EditText
 import android.widget.Filter
 import android.widget.ImageButton
@@ -20,6 +21,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.TimePicker
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -60,6 +62,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var branchDropdown: MaterialAutoCompleteTextView
     private lateinit var targetDirInput: TextInputEditText
     private lateinit var commitMessageInput: TextInputEditText
+    private lateinit var backdateBtn: MaterialButton
+
+    /**
+     * The backdated author-date chosen by the user (null = commit now).
+     * Format is the user-facing one; [backdateIso] converts for the API.
+     */
+    private var commitAuthorDate: java.util.Calendar? = null
     private lateinit var zipBtn: MaterialButton
     private lateinit var filesBtn: MaterialButton
     private lateinit var folderBtn: MaterialButton
@@ -167,6 +176,7 @@ class MainActivity : AppCompatActivity() {
         branchDropdown = findViewById(R.id.branchDropdown)
         targetDirInput = findViewById(R.id.targetDirInput)
         commitMessageInput = findViewById(R.id.commitMessageInput)
+        backdateBtn = findViewById(R.id.backdateBtn)
         zipBtn = findViewById(R.id.zipBtn)
         filesBtn = findViewById(R.id.filesBtn)
         folderBtn = findViewById(R.id.folderBtn)
@@ -247,6 +257,7 @@ class MainActivity : AppCompatActivity() {
 
         overflowBtn.setOnClickListener { showOverflowMenu(it) }
         reloadBtn.setOnClickListener { onReloadClicked() }
+        backdateBtn.setOnClickListener { showBackdateDialog() }
 
         // Auto-connect to the active or pending account on launch.
         val token = vault.loadToken()
@@ -929,6 +940,7 @@ class MainActivity : AppCompatActivity() {
         branchDropdown.setText("", false)
         targetDirInput.setText("")
         commitMessageInput.setText("")
+        resetBackdate()
         viewRepoBtn.visibility = View.GONE
         lastCommitUrl = null
         refreshSelectionSummary()
@@ -1002,6 +1014,89 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ----------------------------------------------------------------- backdate
+
+    /** User-facing format of the chosen author date. */
+    internal fun backdateLabel(): String =
+        java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT
+        ).format(commitAuthorDate!!.time)
+
+    /** ISO-8601 form GitHub expects, e.g. 2024-03-01T14:30:00Z. */
+    internal fun backdateIso(): String? {
+        val cal = commitAuthorDate ?: return null
+        val t = java.time.ZonedDateTime.ofInstant(cal.toInstant(), java.time.ZoneOffset.UTC)
+        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            .format(t.truncatedTo(java.time.temporal.ChronoUnit.SECONDS))
+    }
+
+    /** Back to "now"; used after a push and by Clear selection. */
+    private fun resetBackdate() {
+        commitAuthorDate = null
+        backdateBtn.setText(R.string.backdate_now)
+    }
+
+    // Test hooks (used by BackdateTest; tiny seams, no logic).
+    internal var commitAuthorDateForTest
+        get() = commitAuthorDate
+        set(value) { commitAuthorDate = value }
+    internal fun resetBackdateForTest() = resetBackdate()
+    internal fun refreshBackdateButtonForTest() {
+        backdateBtn.text = if (commitAuthorDate != null) {
+            getString(R.string.backdate_set, backdateLabel())
+        } else getString(R.string.backdate_now)
+    }
+    internal var lastBackdateDialogForTest: android.app.Dialog? = null
+    internal fun showBackdateDialogForTest() { showBackdateDialog() }
+
+    /**
+     * Popup with date + time pickers and an always-visible warning: the
+     * commit will be listed under the chosen date, but it still lands at
+     * the top of the branch, the contribution graph counts the real
+     * upload time and the committer date stays visible in the details.
+     */
+    private fun showBackdateDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_backdate, null)
+        val datePicker = view.findViewById<DatePicker>(R.id.backdateDatePicker)
+        val timePicker = view.findViewById<TimePicker>(R.id.backdateTimePicker)
+
+        // Start the pickers from the currently chosen date (if any), else now.
+        val start = commitAuthorDate ?: java.util.Calendar.getInstance()
+        datePicker.updateDate(
+            start.get(java.util.Calendar.YEAR),
+            start.get(java.util.Calendar.MONTH),
+            start.get(java.util.Calendar.DAY_OF_MONTH)
+        )
+        @Suppress("DEPRECATION")
+        val startHour = start.get(java.util.Calendar.HOUR_OF_DAY)
+        @Suppress("DEPRECATION")
+        val startMinute = start.get(java.util.Calendar.MINUTE)
+        timePicker.hour = startHour
+        timePicker.minute = startMinute
+        timePicker.setIs24HourView(true)
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.backdate_title)
+            .setView(view)
+            .setPositiveButton(R.string.backdate_apply) { _, _ ->
+                @Suppress("DEPRECATION")
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(datePicker.year, datePicker.month, datePicker.dayOfMonth,
+                        timePicker.hour, timePicker.minute, 0)
+                }
+                commitAuthorDate = cal
+                backdateBtn.text = getString(R.string.backdate_set, backdateLabel())
+                setStatus(getString(R.string.backdate_applied_status, backdateLabel()), StatusKind.INFO)
+            }
+            .setNegativeButton(R.string.backdate_cancel, null)
+            .setNeutralButton(R.string.backdate_use_now) { _, _ ->
+                resetBackdate()
+                setStatus(getString(R.string.backdate_cleared_status), StatusKind.INFO)
+            }
+            .show()
+            .also { lastBackdateDialogForTest = it }
+    }
+
     // ------------------------------------------------------------------- push
 
     private fun onPushClicked() {
@@ -1072,7 +1167,8 @@ class MainActivity : AppCompatActivity() {
                     newBranch = null,
                     targetDir = targetDir,
                     commitMessage = msg,
-                    files = files
+                    files = files,
+                    authorDate = backdateIso()
                 )
             }
             setBusy(false)
@@ -1086,12 +1182,14 @@ class MainActivity : AppCompatActivity() {
                     lastCommitUrl = result.commitUrl
                     viewRepoBtn.visibility = View.VISIBLE
                     Toast.makeText(this@MainActivity, "Pushed ✓", Toast.LENGTH_SHORT).show()
-                    // Clear the picked files AND the commit message so it is
-                    // obvious the upload is done and the user starts fresh
-                    // with the next one. The repo / branch selection stays
-                    // (users usually push again to the same place).
+                    // Clear the picked files, the commit message AND the
+                    // backdate so it is obvious the upload is done and the
+                    // user starts fresh with the next one. The repo / branch
+                    // selection stays (users usually push again to the same
+                    // place).
                     tracker.clear()
                     commitMessageInput.setText("")
+                    resetBackdate()
                     refreshSelectionSummary()
                 }
                 is UploadEngine.PushResult.Failure -> {

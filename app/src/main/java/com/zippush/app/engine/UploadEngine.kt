@@ -70,6 +70,7 @@ class UploadEngine(private val client: GitHubClient) {
     /**
      * Pushes [files] to owner/repo at branch, storing them under [targetDir].
      * If [newBranch] is non-null the branch is created from the current head first.
+     * If [authorDate] is non-null the commit is retroactive (backdated).
      */
     fun push(
         owner: String,
@@ -78,7 +79,8 @@ class UploadEngine(private val client: GitHubClient) {
         newBranch: String?,
         targetDir: String,
         commitMessage: String,
-        files: List<PendingFile>
+        files: List<PendingFile>,
+        authorDate: String? = null
     ): PushResult {
         try {
             // -- 1. Resolve branch head ------------------------------------------------
@@ -132,7 +134,7 @@ class UploadEngine(private val client: GitHubClient) {
             }
 
             // -- 5. Commit -------------------------------------------------------------
-            val commitSha = when (val r = client.createCommit(owner, repo, commitMessage, newTreeSha, listOf(headSha!!))) {
+            val commitSha = when (val r = client.createCommit(owner, repo, commitMessage, newTreeSha, listOf(headSha!!), authorDate)) {
                 is GitHubClient.ApiResult.Success -> r.data
                 is GitHubClient.ApiResult.Error -> return PushResult.Failure("Create commit", r.message)
             }

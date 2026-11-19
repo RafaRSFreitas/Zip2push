@@ -36,6 +36,16 @@
     <string name="target_dir_hint">Target folder in the repo (optional)</string>
     <string name="target_dir_helper">Example: assignments/week3 — files land under this folder. Empty = repository root.</string>
     <string name="commit_message_hint">Commit message</string>
+    <string name="backdate_title">Commit date &amp; time</string>
+    <string name="backdate_now">Now (default)</string>
+    <string name="backdate_warning_title">Heads-up</string>
+    <string name="backdate_warning">Heads-up: the commit will be listed under the date you pick, but it still sits at the top of the branch with today\'s commit (committer) date — the history will look out of order, the contribution graph counts the real upload time, and the real date stays visible in the commit details. Use this consciously.</string>
+    <string name="backdate_set">Backdated: %1$s</string>
+    <string name="backdate_apply">Apply date</string>
+    <string name="backdate_use_now">Use current time</string>
+    <string name="backdate_cancel">Cancel</string>
+    <string name="backdate_applied_status">Commit date set to %1$s — the commit will look out of order in history.</string>
+    <string name="backdate_cleared_status">Commit date reset to now.</string>
     <string name="add_zip">Add ZIP archive</string>
     <string name="add_files">Add individual files</string>
     <string name="add_folder">Add folder</string>
