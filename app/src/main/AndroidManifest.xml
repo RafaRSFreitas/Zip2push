@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v0.2.8: the push foreground service (keeps the upload alive when
+         the app goes to the background). No POST_NOTIFICATIONS: the
+         service works without it; the notification simply stays hidden. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:allowBackup="false"
@@ -20,6 +25,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- v0.2.8: keeps the process alive while a push uploads. Runs no
+             logic of its own — it observes PushRunner and stops when the
+             push ends. -->
+        <service
+            android:name=".push.PushService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

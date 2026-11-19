@@ -32,6 +32,8 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.zippush.app.engine.UploadEngine
 import com.zippush.app.net.GitHubClient
+import com.zippush.app.push.PushRunner
+import com.zippush.app.push.PushService
 import com.zippush.app.storage.TokenVault
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -40,8 +42,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Zip2Push v0.2.7 — the v0.2.x architecture restored.
@@ -199,9 +199,12 @@ class MainActivity : AppCompatActivity() {
     internal fun isBusyFlagForTest(): Boolean = progress.visibility == View.VISIBLE
     internal val tracker = SelectionTracker()
 
-    /** True while a push coroutine from THIS activity instance is running. */
-    @Volatile
-    private var pushRunning = false
+    /**
+     * Re-renders PushRunner state (running / done) into this activity
+     * instance. Re-attached by every recreation, so a push started
+     * before a rotation still shows its result afterwards (v0.2.8).
+     */
+    private val pushObserver = PushRunner.Observer { st -> renderPushState(st) }
 
     /**
      * Last-resort safety net: any exception escaping a coroutine shows on
@@ -209,7 +212,6 @@ class MainActivity : AppCompatActivity() {
      */
     private val crashGuard = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("Zip2Push", "Uncaught coroutine error", throwable)
-        pushRunning = false
         if (alive) {
             setStatus(
                 getString(R.string.unexpected_error, throwable.message ?: "unknown"),
@@ -225,8 +227,34 @@ class MainActivity : AppCompatActivity() {
     /** True while this activity instance is still usable for UI updates. */
     private var alive = true
 
+    /**
+     * True between onStart and onStop — i.e. while starting the
+     * foreground service is ALLOWED. Android 12+ kills the process with
+     * ForegroundServiceStartNotAllowedException when startForegroundService()
+     * is called while the app is backgrounded. The push itself runs in
+     * the app-scoped PushRunner regardless; the service is only the
+     * process-lifeboat while the upload is in flight.
+     */
+    private var uiStarted = false
+
+    override fun onStart() {
+        super.onStart()
+        uiStarted = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        uiStarted = false
+    }
+
+    /** Starts the push foreground service only while legally allowed. */
+    internal fun startPushServiceIfAllowed() {
+        if (alive && uiStarted) PushService.start(this)
+    }
+
     override fun onDestroy() {
         alive = false
+        PushRunner.removeObserver(pushObserver)
         scope.cancel()
         super.onDestroy()
     }
@@ -321,6 +349,11 @@ class MainActivity : AppCompatActivity() {
         themeToggleBtn.setOnClickListener { toggleTheme() }
 
         vault = TokenVault(this)
+
+        // A push may have been started by a previous activity instance
+        // (rotation). Re-attach to render its state or result (v0.2.8).
+        PushRunner.addObserver(pushObserver)
+        renderPushState(PushRunner.state)
 
         // Restore a repo chosen before a configuration change right away:
         // the field shows it immediately (the list refresh re-matches it
@@ -1369,8 +1402,52 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------- push
 
+    /** Renders the app-scoped push state into this activity instance. */
+    private fun renderPushState(st: PushRunner.State) {
+        if (!alive || isFinishing) return
+        when (st) {
+            is PushRunner.State.Running -> {
+                setBusy(true)
+                setStatus(st.job.description, StatusKind.PROGRESS)
+            }
+            is PushRunner.State.Done -> {
+                setBusy(false)
+                when (val result = st.result) {
+                    is UploadEngine.PushResult.Success -> {
+                        setStatus(
+                            getString(R.string.push_success, result.filesPushed, result.commitUrl),
+                            StatusKind.SUCCESS
+                        )
+                        lastCommitUrl = result.commitUrl
+                        viewRepoBtn.visibility = View.VISIBLE
+                        Toast.makeText(this, "Pushed ✓", Toast.LENGTH_SHORT).show()
+                        // Clear the picked files, the commit message AND the
+                        // backdate so the user starts fresh with the next
+                        // upload. The repo / branch selection stays (users
+                        // usually push again to the same place).
+                        tracker.clear()
+                        commitMessageInput.setText("")
+                        setDescriptionExpanded(false)
+                        resetBackdate()
+                        refreshSelectionSummary()
+                    }
+                    is UploadEngine.PushResult.Failure -> {
+                        setStatus(
+                            getString(R.string.push_failed, result.stage, result.message),
+                            StatusKind.ERROR
+                        )
+                    }
+                }
+            }
+            PushRunner.State.Idle -> {
+                // Nothing running and nothing to show — e.g. right after
+                // attach when no push ever started. Keep current UI.
+            }
+        }
+    }
+
     private fun onPushClicked() {
-        if (pushRunning) {
+        if (PushRunner.isBusy()) {
             setStatus(getString(R.string.push_in_progress), StatusKind.PROGRESS)
             return
         }
@@ -1397,131 +1474,36 @@ class MainActivity : AppCompatActivity() {
         }
 
         val engine = engine ?: return
-        // Capture everything the push needs from THIS activity instance on
-        // the main thread, before hopping to IO: the ISO string (no
-        // java.time on API 24 — must not run on the IO path) and the
-        // login for the author fields.
+        // Capture everything the push needs on the main thread, before the
+        // runner hops to IO: the ISO string (no java.time on API 24) and
+        // the login for the author fields.
         val authorIso = backdateIso()
         val authorLogin = vault.activeLogin()
-        pushRunning = true
-        setBusy(true)
-        setStatus("Pushing to ${repo.fullName}…", StatusKind.PROGRESS)
 
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                pushNow(engine, selection, repo, branch ?: "main", targetDir, msg, authorIso, authorLogin)
-            }
-            pushRunning = false
-            if (!alive || isFinishing) return@launch
-            setBusy(false)
-            when (result) {
-                is UploadEngine.PushResult.Success -> {
-                    setStatus(
-                        getString(R.string.push_success, result.filesPushed, result.commitUrl),
-                        StatusKind.SUCCESS
-                    )
-                    lastCommitUrl = result.commitUrl
-                    viewRepoBtn.visibility = View.VISIBLE
-                    Toast.makeText(this@MainActivity, "Pushed ✓", Toast.LENGTH_SHORT).show()
-                    // Clear the picked files, the commit message AND the
-                    // backdate so the user starts fresh with the next
-                    // upload. The repo / branch selection stays (users
-                    // usually push again to the same place).
-                    tracker.clear()
-                    commitMessageInput.setText("")
-                    setDescriptionExpanded(false)
-                    resetBackdate()
-                    refreshSelectionSummary()
-                }
-                is UploadEngine.PushResult.Failure -> {
-                    setStatus(
-                        getString(R.string.push_failed, result.stage, result.message),
-                        StatusKind.ERROR
-                    )
-                }
-            }
-        }
-    }
-
-    /**
-     * The upload itself (v0.2.x behaviour): builds the file list from the
-     * snapshotted selection and runs the engine. Always runs on IO.
-     */
-    private fun pushNow(
-        engine: UploadEngine,
-        selection: SelectionTracker.Snapshot,
-        repo: GitHubClient.Repo,
-        branch: String,
-        targetDir: String,
-        msg: String,
-        authorIso: String?,
-        authorLogin: String?
-    ): UploadEngine.PushResult {
-        val files = mutableListOf<UploadEngine.PendingFile>()
-
-        // The ZIP (if any) contributes entries with their inner paths.
-        // A failed read (expired URI grant, provider gone) skips the
-        // archive — the user sees "no readable files" instead of a crash.
-        selection.zip?.let { uri ->
-            val cached = runCatching { copyUriToCache(uri) }.getOrNull()
-            if (cached != null) {
-                runCatching {
-                    files.addAll(engine.extractZipEntries(cached, skipRootFolder = true))
-                }
-                // The cache copy is no longer needed once parsed.
-                cached.delete()
-            }
-        }
-
-        // Standalone files and folder files: one item each. Folder files
-        // keep their repo paths.
-        val named = mutableListOf<Pair<String, ByteArray>>()
-        for (u in selection.files) {
-            val name = runCatching { queryDisplayName(u) }.getOrNull() ?: "file"
-            val bytes = runCatching {
-                contentResolver.openInputStream(u)?.use { it.readBytes() }
-            }.getOrNull()
-            if (bytes != null) named.add(name to bytes)
-        }
-        for (ff in selection.folderFiles) {
-            val bytes = runCatching {
-                contentResolver.openInputStream(ff.uri)?.use { it.readBytes() }
-            }.getOrNull()
-            if (bytes != null) named.add(ff.repoPath to bytes)
-        }
-        files.addAll(engine.collectNamedFiles(named))
-
-        if (files.isEmpty()) {
-            return UploadEngine.PushResult.Failure("Prepare", getString(R.string.no_readable_files))
-        }
-
-        return engine.push(
-            owner = repo.owner,
-            repo = repo.name,
-            branch = branch,
-            newBranch = null,
+        // Hand over to the app-scoped runner: the push survives rotation
+        // and the recreated activity re-attaches to show the result
+        // (v0.2.8 — "goes until the end").
+        val started = PushRunner.start(
+            context = this,
+            engine = engine,
+            selection = selection,
+            repo = repo,
+            branch = branch ?: "main",
             targetDir = targetDir,
-            commitMessage = msg,
-            files = files,
-            authorDate = authorIso,
+            message = msg,
+            authorDateIso = authorIso,
             authorLogin = authorLogin
         )
+        if (!started) {
+            setStatus(getString(R.string.push_in_progress), StatusKind.PROGRESS)
+            return
+        }
+        // Keep the process alive while the upload runs (only legal while
+        // the UI is started — see startPushServiceIfAllowed).
+        startPushServiceIfAllowed()
     }
 
-    private fun copyUriToCache(uri: Uri): File {
-        // Unique name per copy: a previous push's cache file could still
-        // be held open by the engine when a second push reused the same
-        // path, and a partial overwrite corrupted the archive read.
-        val target = File(cacheDir, "zippush_upload_${System.nanoTime()}.zip")
-        contentResolver.openInputStream(uri)?.use { input ->
-            FileOutputStream(target).use { output -> input.copyTo(output) }
-        }
-        if (!target.exists() || target.length() == 0L) {
-            throw java.io.IOException("empty or unreadable archive")
-        }
-        return target
-    }
-
+    /** Display name of a content Uri (for the selection summary). */
     private fun queryDisplayName(uri: Uri): String? = try {
         var name: String? = null
         contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -1534,7 +1516,7 @@ class MainActivity : AppCompatActivity() {
     } catch (e: Exception) {
         // Providers can throw SecurityException for expired grants or
         // disappear entirely (uninstalled app) — the fallback name is
-        // enough; a crash here would kill an in-flight push.
+        // enough; a crash here would break the summary line.
         null
     }
 

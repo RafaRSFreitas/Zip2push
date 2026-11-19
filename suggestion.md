@@ -1,51 +1,48 @@
-# Zip2Push — v0.2.7 (rollback para a arquitetura 0.2.6 + Add description)
+# Zip2Push — v0.2.8 (o push vai até o fim)
 
-> **Decisão desta versão:** a linha 0.3.x foi abandonada. Você pediu para voltar ao 0.2.6 — a última versão que funcionava por completo — e implementar **apenas** a feature de descrição. A v0.2.7 é exatamente isso: a arquitetura do 0.2.6 restaurada, com um único acréscimo.
+> **Problema relatado:** ao dar push, o upload às vezes parava quando o app ia para o segundo plano ou quando o aparelho era rotacionado.
+>
+> **Causa:** herança da arquitetura 0.2.6 restaurada na v0.2.7 — o push rodava dentro do *coroutine scope da activity*. Rotação destrói a activity (e cancela o upload no meio); em segundo plano o sistema pode matar o processo a qualquer momento.
+>
+> **Correção v0.2.8:** dois mecanismos mínimos, sem re-introduzir nada da linha 0.3.x (sem fila, sem retry, sem histórico, sem share, sem accent, sem prompt de notificação).
 
-## O que foi removido (tudo que a 0.3.0–0.3.3 introduziu)
+## O que mudou
 
-Todos os subsistemas que chegaram depois do 0.2.6 saíram do app — eles carregavam os crashes relatados desde a 0.3.0:
+### 1. `PushRunner` — o push agora pertence ao app, não à tela
 
-| Removido | O que era (v0.3.x) |
-| --- | --- |
-| `push/PushService.kt` + permissões `POST_NOTIFICATIONS` / `FOREGROUND_SERVICE*` | Push em segundo plano com notificação (foreground service) |
-| `storage/PushQueue.kt` + polling de conectividade de 30 s | Fila de pushes com retry automático |
-| `storage/PushHistory.kt` + telas de histórico | Histórico de pushes |
-| Share target (`ACTION_SEND`/`SEND_MULTIPLE` no manifest) | Compartilhar arquivos de outros apps |
-| `AccentColor.kt` + overlays de cor de acento | Cores de acento configuráveis |
-| Autocomplete de subpasta-alvo | Sugestões de pastas do repo no campo target |
-| `engine/PushManager.kt` (singleton) | Push sobrevivendo a rotação/background |
+O upload saiu do scope da activity e foi para um **singleton de escopo-de-aplicação** (`push/PushRunner.kt`). O que isso resolve:
 
-O manifest volta a ter **uma única permissão: `INTERNET`** — igual ao 0.2.6.
+- **Rotação:** destruir a activity não cancela mais o upload — ele corre no scope do runner, que ninguém fecha. A activity recriada **re-conecta ao runner** no `onCreate` e re-renderiza o estado: enquanto o push corre mostra o progresso; quando termina, mostra "Pushed ✓" com o botão *View on GitHub*. Um push terminado fica retido até o próximo começar, então mesmo uma rotação logo após o fim ainda mostra o resultado.
+- **Activity destruída / usuário saiu:** o push continua sozinho no runner e termina; ao reabrir o app, o resultado está lá.
+- **Toque duplo:** `PushRunner.start` só aceita um push por vez — o segundo toque durante um push mostra "already in progress" (igual antes, agora à prova de rotação).
+- Todo o trabalho de leitura de arquivos (cache do ZIP, content resolver) também migrou para o runner, com contexto de **aplicação** — nada referencia mais a activity morta.
 
-## O que ficou (o 0.2.6 completo)
+### 2. `PushService` — o processo não morre em segundo plano
 
-- Conexão por token (multi-conta com Keystore), lista de repos e branches com paginação, criação de branch, botão reload;
-- Seleção de ZIP / arquivos / pasta (com caminhos relativos), botões equalizados, resumo da seleção;
-- Mensagem de commit, **pasta-alvo**, **backdate** (data retroativa, com diálogo de aviso — feature v0.2.x), tema claro/escuro, menu About/Donations;
-- O push roda **no scope da activity** (arquitetura 0.2.6): upload em `Dispatchers.IO`, resultado na linha de status, crashGuard transformando qualquer exceção em mensagem de erro em vez de crash do processo. Uma rotação durante o upload cancela o push (comportamento do 0.2.6) — sem singletons de fundo para quebrar.
+Um **foreground service mínimo** (`push/PushService.kt`, tipo `dataSync`) é iniciado junto com o push e **para sozinho quando o push termina** (observa o runner — sucesso ou falha). Ele não roda lógica nenhuma de upload; só mantém o processo vivo pelo curto período do upload.
 
-## A única feature nova: Add description (v0.2.7)
+Detalhes deliberados:
 
-Comportamento pedido, implementado exatamente como especificado:
+- Notificação **silenciosa** (canal `IMPORTANCE_LOW`, sem som, sem badge). Nenhum prompt de permissão é exibido — `POST_NOTIFICATIONS` **não** foi adicionada; no Android 13+ sem a permissão a notificação simplesmente não aparece e o push funciona igual.
+- `startForeground()` é chamado **antes** de qualquer `stopSelf()` (o contrato do Android que a 0.3.1 quebrou — mantido certo aqui).
+- O serviço só é iniciado **enquanto a activity está started** (`onStart`–`onStop`), evitando o `ForegroundServiceStartNotAllowedException` do Android 12+.
+- Sem fila, sem polling, sem retry: se o push falhar por rede, a mensagem de erro aparece na linha de status e o usuário toca Push de novo (comportamento 0.2.x que você conhece).
 
-1. O campo de descrição começa **recolhido**; só o botão **"Add description"** é visível.
-2. Ao tocar em "Add description", o campo multilinha expande e o botão some (não tem mais utilidade).
-3. **Com o campo vazio**, aparece o botão **"Hide description"** para recolhê-lo — é o caso "abriu sem querer / não quer mais usar".
-4. **Assim que o usuário digita algo, o botão de recolher desaparece** — texto digitado nunca é escondido silenciosamente.
-5. Se o texto for apagado, o botão de recolher volta.
-6. Recolher limpa o texto e devolve o "Add description".
-7. Na hora do push, a descrição vira o **corpo do commit** no formato padrão do Git: `título` + linha em branco + `corpo`. Após um push bem-sucedido (ou "Clear selection"), o campo volta ao estado inicial (recolhido, vazio).
+## O que NÃO voltou da 0.3.x
 
-## Testes — 87/87 verdes
+Fila de pushes, polling de 30 s, histórico, share target, cores de acento, autocomplete de pasta, prompt de notificação — tudo continua fora. O manifest ganhou apenas as duas permissões que o foreground service exige (`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`) além do `INTERNET`.
 
-- **78** testes da regressão v0.2.x que continuam válidos (backdate, tema, clear, dropdowns, sessão, parsing do GitHubClient, PushHttp com MockWebServer, ArchiveReader, PathSanitizer, EngineHardening, SelectionTracker, Screenshot, geometria dos botões, resiliência).
-- **+6** `DescriptionCollapseTest` — a spec completa da feature, incluindo os casos-limite: texto só-espaços conta como vazio; digitar esconde o recolher; apagar traz de volta; clique real nos botões.
-- **+3** `PushFlowTest` — o fluxo v0.2.7 de ponta a ponta com HTTP real: jornada completa (conectar → repos → zip real → push com descrição → o corpo `"título\n\ncorpo"` confirmado no request do commit), segundo toque durante o push recusado (exatamente 1 sequência Git no wire), e backdate sobrevivendo à rotação.
-- Removidos os testes dos subsistemas excluídos (PushLifecycleTest, RealUsageJourneyTest, PushServiceContractTest, PushManagerStabilityTest, PushHistoryAndQueueTest, StorageStabilityTest).
+## Testes
+
+- Suíte completa verde (regressões 0.2.x de backdate/tema/clear/dropdowns/parsing/engine + `DescriptionCollapseTest` intactos — a feature de descrição da v0.2.7 não mudou).
+- `PushFlowTest` reescrito para a nova arquitetura, com os casos novos:
+  - **`push survives screen rotation started before completion`** — a rotação acontece com o upload no meio do wire (o POST do commit só responde *depois* da rotação); o push completa e a activity recriada mostra o resultado, com exatamente 1 sequência Git no wire;
+  - **`push completes with no activity attached`** — a activity é destruída no meio do push; o runner termina sozinho e um relançamento mostra o commit;
+  - **`foreground service starts with push`** — o intent do serviço é emitido ao iniciar o push;
+  - **`recreated activity shows busy`** — a activity recriada bloqueia Push enquanto o push herdado corre;
+  - jornada completa com descrição (`título\n\ncorpo` confirmado no request), segundo toque recusado, backdate sobrevivendo à rotação.
 
 ## Notas
 
-- **versionCode 13, versionName 0.2.7** — instala por cima de qualquer versão anterior (mesma chave de assinatura).
-- A tela, strings e diálogos voltam ao visual do 0.2.6; nenhuma string de fila/histórico/notificação/acento resta no APK.
-- Se um push falhar por rede, o comportamento é o do 0.2.6: mensagem de erro na linha de status; o usuário toca Push de novo quando quiser.
+- **versionCode 14, versionName 0.2.8** — instala por cima da 0.2.7 (mesma chave).
+- Limite honesto: se o **usuário forçar a parada** do app (ou o sistema matar o processo por memória em condição extrema), o push obviamente morre — foreground service reduz muito a janela, mas não é imunidade absoluta. O retry manual continua sendo: tocar Push de novo.
