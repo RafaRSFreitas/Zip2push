@@ -16,8 +16,8 @@ android {
         applicationId "com.zippush.app"
         minSdk 24
         targetSdk 34
-        versionCode 6
-        versionName "0.2.4"
+        versionCode 7
+        versionName "0.2.5"
     }
 
     signingConfigs {
@@ -70,4 +70,6 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.13'
     testImplementation 'androidx.test:core:1.6.1'
+    // Local HTTP server to test the full GitHub API push sequence.
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
 }

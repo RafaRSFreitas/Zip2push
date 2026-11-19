@@ -33,6 +33,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.zippush.app.engine.PushManager
 import com.zippush.app.engine.UploadEngine
 import com.zippush.app.net.GitHubClient
 import com.zippush.app.storage.TokenVault
@@ -52,6 +53,7 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_ABOUT = 100
         private const val MENU_DONATIONS = 101
         private const val PREF_THEME_MODE = "theme_mode"
+        private const val STATE_BACKDATE_EPOCH = "backdate_epoch_ms"
     }
 
     // ------------------------------------------------------------------ views
@@ -132,10 +134,27 @@ class MainActivity : AppCompatActivity() {
     /** True while this activity instance is still usable for UI updates. */
     private var alive = true
 
+    /**
+     * Re-renders PushManager state (running / done) into this activity
+     * instance. Re-attached by every recreation, so a push started
+     * before a rotation still shows its result afterwards.
+     */
+    private val pushObserver = PushManager.Observer { st -> renderPushState(st) }
+
     override fun onDestroy() {
         alive = false
+        PushManager.removeObserver(pushObserver)
+        // Only the activity's own scope dies here; an in-flight push lives
+        // in PushManager and continues in the background (see PushManager).
         scope.cancel()
         super.onDestroy()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Preserve the chosen backdate across rotation / process death so
+        // it is not silently lost mid-flow.
+        commitAuthorDate?.let { outState.putLong(STATE_BACKDATE_EPOCH, it.timeInMillis) }
     }
 
     /** Last pushed commit URL, used by the "View on GitHub" button. */
@@ -206,6 +225,18 @@ class MainActivity : AppCompatActivity() {
         themeToggleBtn.setOnClickListener { toggleTheme() }
 
         vault = TokenVault(this)
+
+        // A push may have been started by a previous activity instance
+        // (rotation / background). Re-attach to render its state or result.
+        PushManager.addObserver(pushObserver)
+
+        // Restore the backdate chosen before a configuration change.
+        val savedEpoch = savedInstanceState?.getLong(STATE_BACKDATE_EPOCH, -1L) ?: -1L
+        if (savedEpoch > 0) {
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = savedEpoch }
+            commitAuthorDate = cal
+            refreshBackdateButtonForTest()
+        }
 
         // ------------------------------------------------ account interactions
         accountBtn.setOnClickListener { showAccountsPopup() }
@@ -1022,12 +1053,20 @@ class MainActivity : AppCompatActivity() {
             java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT
         ).format(commitAuthorDate!!.time)
 
-    /** ISO-8601 form GitHub expects, e.g. 2024-03-01T14:30:00Z. */
+    /**
+     * ISO-8601 form GitHub expects, e.g. 2024-03-01T14:30:00Z.
+     *
+     * Deliberately uses SimpleDateFormat (API 1) instead of the modern
+     * date-time API: the app runs on devices from API 24 and core-library
+     * desugaring is not enabled, so those classes are absent on Android
+     * 7.x and would crash the push (the original backdate bug).
+     * Must run on the main thread before the push coroutine starts.
+     */
     internal fun backdateIso(): String? {
         val cal = commitAuthorDate ?: return null
-        val t = java.time.ZonedDateTime.ofInstant(cal.toInstant(), java.time.ZoneOffset.UTC)
-        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
-            .format(t.truncatedTo(java.time.temporal.ChronoUnit.SECONDS))
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+        fmt.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return fmt.format(cal.time)
     }
 
     /** Back to "now"; used after a push and by Clear selection. */
@@ -1099,6 +1138,54 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------- push
 
+    /**
+     * Renders PushManager state into the UI. Called for the live instance
+     * and again for every recreated instance (rotation) — that is how a
+     * push that started before the rotation still shows "Pushing…" and
+     * its final result afterwards.
+     */
+    private fun renderPushState(st: PushManager.State) {
+        if (!alive) return
+        when (st) {
+            is PushManager.State.Running -> {
+                setBusy(true)
+                setStatus(st.job.description, StatusKind.PROGRESS)
+            }
+            is PushManager.State.Done -> {
+                setBusy(false)
+                when (val result = st.result) {
+                    is UploadEngine.PushResult.Success -> {
+                        setStatus(
+                            getString(R.string.push_success, result.filesPushed, result.commitUrl),
+                            StatusKind.SUCCESS
+                        )
+                        lastCommitUrl = result.commitUrl
+                        viewRepoBtn.visibility = View.VISIBLE
+                        Toast.makeText(this, "Pushed ✓", Toast.LENGTH_SHORT).show()
+                        // Clear the picked files, the commit message AND the
+                        // backdate so the user starts fresh with the next
+                        // upload. The repo / branch selection stays (users
+                        // usually push again to the same place).
+                        tracker.clear()
+                        commitMessageInput.setText("")
+                        resetBackdate()
+                        refreshSelectionSummary()
+                    }
+                    is UploadEngine.PushResult.Failure -> {
+                        setStatus(
+                            getString(R.string.push_failed, result.stage, result.message),
+                            StatusKind.ERROR
+                        )
+                    }
+                }
+            }
+            PushManager.State.Idle -> {
+                // Nothing running and nothing to show — e.g. right after
+                // attach when no push ever started. Keep current UI.
+            }
+        }
+    }
+
     private fun onPushClicked() {
         val repo = selectedRepo
         val branch = selectedBranch?.name
@@ -1119,16 +1206,24 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        setBusy(true)
-        setStatus("Preparing files…", StatusKind.PROGRESS)
-        scope.launch {
-            // Read the snapshot into memory off the main thread.
+        // Capture everything the push needs from THIS activity instance on
+        // the main thread, before handing over to PushManager: the ISO
+        // string (no java.time on API 24 — must not run on the IO path),
+        // the login for the author fields, and the content resolver reads.
+        val engine = engine ?: return
+        val authorIso = backdateIso()
+        val authorLogin = vault.activeLogin()
+        val description = "Pushing to ${repo.fullName}…"
+
+        val started = PushManager.start(description) {
+            // Runs on PushManager's own scope: survives rotation and the
+            // activity going to the background.
             val files = withContext(Dispatchers.IO) {
                 val list = mutableListOf<UploadEngine.PendingFile>()
                 selection.zip?.let { uri ->
                     runCatching {
                         val f = copyUriToCache(uri)
-                        list.addAll(engine!!.extractZipEntries(f, skipRootFolder = true))
+                        list.addAll(engine.extractZipEntries(f, skipRootFolder = true))
                     }.onFailure {
                         mainHandler.post {
                             setStatus("Failed reading ZIP: ${it.message}", StatusKind.ERROR)
@@ -1152,15 +1247,13 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (files.isEmpty()) {
-                setBusy(false)
-                setStatus(getString(R.string.no_readable_files), StatusKind.ERROR)
-                return@launch
+                return@start UploadEngine.PushResult.Failure(
+                    "Prepare", getString(R.string.no_readable_files)
+                )
             }
 
-            setStatus("Pushing ${files.size} files…", StatusKind.PROGRESS)
-            val e = engine ?: return@launch
-            val result = withContext(Dispatchers.IO) {
-                e.push(
+            withContext(Dispatchers.IO) {
+                engine.push(
                     owner = repo.owner,
                     repo = repo.name,
                     branch = branch ?: "main",
@@ -1168,37 +1261,15 @@ class MainActivity : AppCompatActivity() {
                     targetDir = targetDir,
                     commitMessage = msg,
                     files = files,
-                    authorDate = backdateIso()
+                    authorDate = authorIso,
+                    authorLogin = authorLogin
                 )
             }
-            setBusy(false)
-            when (result) {
-                is UploadEngine.PushResult.Success -> {
-                    setStatus(
-                        getString(R.string.push_success, result.filesPushed, result.commitUrl),
-                        StatusKind.SUCCESS
-                    )
-                    // Show the button that opens the commit on GitHub.
-                    lastCommitUrl = result.commitUrl
-                    viewRepoBtn.visibility = View.VISIBLE
-                    Toast.makeText(this@MainActivity, "Pushed ✓", Toast.LENGTH_SHORT).show()
-                    // Clear the picked files, the commit message AND the
-                    // backdate so it is obvious the upload is done and the
-                    // user starts fresh with the next one. The repo / branch
-                    // selection stays (users usually push again to the same
-                    // place).
-                    tracker.clear()
-                    commitMessageInput.setText("")
-                    resetBackdate()
-                    refreshSelectionSummary()
-                }
-                is UploadEngine.PushResult.Failure -> {
-                    setStatus(
-                        getString(R.string.push_failed, result.stage, result.message),
-                        StatusKind.ERROR
-                    )
-                }
-            }
+        }
+        if (!started) {
+            // A push is already in flight (double tap, or one surviving a
+            // rotation). Show the running status instead of starting over.
+            setStatus(getString(R.string.push_in_progress), StatusKind.PROGRESS)
         }
     }
 
