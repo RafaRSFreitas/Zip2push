@@ -1,102 +1,51 @@
-# Zip2Push — sugestões de novas features (v0.2.6)
+# Zip2Push — v0.2.7 (rollback para a arquitetura 0.2.6 + Add description)
 
-> **Nada abaixo foi implementado.** É uma proposta para revisão — me diga quais itens aprovar, alterar ou descartar, e eu implemento na ordem que você escolher.
+> **Decisão desta versão:** a linha 0.3.x foi abandonada. Você pediu para voltar ao 0.2.6 — a última versão que funcionava por completo — e implementar **apenas** a feature de descrição. A v0.2.7 é exatamente isso: a arquitetura do 0.2.6 restaurada, com um único acréscimo.
 
-Cada sugestão tem: o que é, por que vale a pena (problema real que resolve), complexidade estimada (S = ≤ meio dia, M = 1–2 dias, L = 3+ dias) e riscos.
+## O que foi removido (tudo que a 0.3.0–0.3.3 introduziu)
 
----
+Todos os subsistemas que chegaram depois do 0.2.6 saíram do app — eles carregavam os crashes relatados desde a 0.3.0:
 
-## 1. Push em segundo plano com notificação (foreground service) — M
+| Removido | O que era (v0.3.x) |
+| --- | --- |
+| `push/PushService.kt` + permissões `POST_NOTIFICATIONS` / `FOREGROUND_SERVICE*` | Push em segundo plano com notificação (foreground service) |
+| `storage/PushQueue.kt` + polling de conectividade de 30 s | Fila de pushes com retry automático |
+| `storage/PushHistory.kt` + telas de histórico | Histórico de pushes |
+| Share target (`ACTION_SEND`/`SEND_MULTIPLE` no manifest) | Compartilhar arquivos de outros apps |
+| `AccentColor.kt` + overlays de cor de acento | Cores de acento configuráveis |
+| Autocomplete de subpasta-alvo | Sugestões de pastas do repo no campo target |
+| `engine/PushManager.kt` (singleton) | Push sobrevivendo a rotação/background |
 
-**O que:** transformar o push num `ForegroundService` com notificação de progresso ("Enviando 3/10 arquivos…"), em vez de depender do processo da Activity ficar vivo.
+O manifest volta a ter **uma única permissão: `INTERNET`** — igual ao 0.2.6.
 
-**Por quê:** hoje o `PushManager` sobrevive à rotação e ao background (v0.2.5), mas o Android ainda pode matar o processo em memória baixa com o app em background. Para ZIPs grandes em redes lentas, o service + notificação é a única garantia real de conclusão.
+## O que ficou (o 0.2.6 completo)
 
-**Riscos:** precisa de permissão `POST_NOTIFICATIONS` (Android 13+) e `FOREGROUND_SERVICE_DATA_SYNC` (Android 14+); mais estados para testar.
+- Conexão por token (multi-conta com Keystore), lista de repos e branches com paginação, criação de branch, botão reload;
+- Seleção de ZIP / arquivos / pasta (com caminhos relativos), botões equalizados, resumo da seleção;
+- Mensagem de commit, **pasta-alvo**, **backdate** (data retroativa, com diálogo de aviso — feature v0.2.x), tema claro/escuro, menu About/Donations;
+- O push roda **no scope da activity** (arquitetura 0.2.6): upload em `Dispatchers.IO`, resultado na linha de status, crashGuard transformando qualquer exceção em mensagem de erro em vez de crash do processo. Uma rotação durante o upload cancela o push (comportamento do 0.2.6) — sem singletons de fundo para quebrar.
 
-## 2. Fila de pushes + retry automático — M
+## A única feature nova: Add description (v0.2.7)
 
-**O que:** se um push falha por rede (timeout, avião), ele entra numa fila persistida (Room ou arquivo) e o app tenta de novo quando a conectividade volta; lista de pendentes visível com opção de cancelar.
+Comportamento pedido, implementado exatamente como especificado:
 
-**Por quê:** hoje uma falha no meio da sequência Git Data API (ex.: blob 4 de 10 subido) exige refazer tudo manualmente. O retry idempotente é seguro porque o commit só é criado no final (blobs e trees são imutáveis e reutilizáveis).
+1. O campo de descrição começa **recolhido**; só o botão **"Add description"** é visível.
+2. Ao tocar em "Add description", o campo multilinha expande e o botão some (não tem mais utilidade).
+3. **Com o campo vazio**, aparece o botão **"Hide description"** para recolhê-lo — é o caso "abriu sem querer / não quer mais usar".
+4. **Assim que o usuário digita algo, o botão de recolher desaparece** — texto digitado nunca é escondido silenciosamente.
+5. Se o texto for apagado, o botão de recolher volta.
+6. Recolher limpa o texto e devolve o "Add description".
+7. Na hora do push, a descrição vira o **corpo do commit** no formato padrão do Git: `título` + linha em branco + `corpo`. Após um push bem-sucedido (ou "Clear selection"), o campo volta ao estado inicial (recolhido, vazio).
 
-**Riscos:** persistir o conteúdo dos arquivos até o push dar certo ocupa cache; definir política de expiração.
+## Testes — 87/87 verdes
 
-## 3. Histórico de pushes — S
+- **78** testes da regressão v0.2.x que continuam válidos (backdate, tema, clear, dropdowns, sessão, parsing do GitHubClient, PushHttp com MockWebServer, ArchiveReader, PathSanitizer, EngineHardening, SelectionTracker, Screenshot, geometria dos botões, resiliência).
+- **+6** `DescriptionCollapseTest` — a spec completa da feature, incluindo os casos-limite: texto só-espaços conta como vazio; digitar esconde o recolher; apagar traz de volta; clique real nos botões.
+- **+3** `PushFlowTest` — o fluxo v0.2.7 de ponta a ponta com HTTP real: jornada completa (conectar → repos → zip real → push com descrição → o corpo `"título\n\ncorpo"` confirmado no request do commit), segundo toque durante o push recusado (exatamente 1 sequência Git no wire), e backdate sobrevivendo à rotação.
+- Removidos os testes dos subsistemas excluídos (PushLifecycleTest, RealUsageJourneyTest, PushServiceContractTest, PushManagerStabilityTest, PushHistoryAndQueueTest, StorageStabilityTest).
 
-**O que:** tela/dialog com os últimos pushes da sessão-permanente (repo, branch, data, arquivos, link do commit, status), persistido localmente; tocar abre o commit no GitHub.
+## Notas
 
-**Por quê:** o botão "View commit" só mostra o **último**; quem empurra vários pacotes seguidos perde os links anteriores.
-
-**Riscos:** baixo. Sem sync com servidor — é log local.
-
-## 4. Seleção de subpasta-alvo com autocomplete — S
-
-**O que:** o campo "target directory" virar um dropdown com as pastas existentes no repo (da árvore Git já buscada no push) + digitação livre.
-
-**Por quê:** erros de digitação criam pastas erradas no repo (ex.: `docs ` com espaço). Autocomplete das pastas reais elimina o erro.
-
-**Riscos:** baixo. A árvore pode ser grande em repos enormes — limitar sugestões a ~20.
-
-## 5. Drag & drop entre contas (multi-account) — M
-
-**O que:** ao trocar de conta, manter a seleção de arquivos (hoje a troca limpa tudo) e mostrar de qual conta o repo atual pertence no dropdown (ex.: badge com avatar do owner quando o repo não é da conta ativa).
-
-**Por quê:** com 2+ contas, trocar para publicar num repo da outra conta hoje exige reconectar e re-selecionar tudo.
-
-**Riscos:** o token da conta ativa pode não ter permissão no repo escolhido — precisa validar antes do push.
-
-## 6. Descrição do commit multilinha — S
-
-**O que:** campo de mensagem com botão "expandir" para título + corpo (o corpo vai no mesmo `message` do commit, separado por linha em branco).
-
-**Por quê:** mensagem única de linha dificulta descrever o que o pacote contém; corpo multilinha é o padrão Git.
-
-**Riscos:** nenhum técnico; ajuste de layout.
-
-## 7. Compartilhar com Zip2Push (Share Target) — M
-
-**O que:** registrar a app como destino de compartilhamento (`ACTION_SEND` / `ACTION_SEND_MULTIPLE`): compartilhar arquivos de qualquer app abre o ZipPush com eles pré-selecionados.
-
-**Por quê:** hoje o fluxo é "abrir o ZipPush → procurar arquivos"; Share Target inverte para "arquivo → ZipPush", que é o gesto natural do Android.
-
-**Riscos:** `ACTION_SEND_MULTIPLE` com URIs de outros apps exige cuidado com permissões temporárias (`Intent.FLAG_GRANT_READ_URI_PERMISSION`).
-
-## 8. Suporte a .tar.gz / .tar — M
-
-**O que:** aceitar tarballs além de ZIP no botão de arquivo.
-
-**Por quê:** usuários de Linux frequentemente têm tarballs; hoje recebem "formato não suportado".
-
-**Riscos:** biblioteca de tar nativa no Android é limitada (Apache Commons Compress adiciona ~200KB); testes com tarballs grandes.
-
-## 9. Detecção de conflito (branch moveda) com merge guidance — M
-
-**O que:** quando o `updateRef` falha porque a branch avançou desde o `getBranchHead`, buscar o novo head, recriar o commit com o pai correto (rebase simples) e tentar de novo — em vez de falhar com "Update branch".
-
-**Por quê:** push simultâneo de duas pessoas (ou do próprio usuário no PC) hoje falha no final, depois de subir todos os blobs.
-
-**Riscos:** recriar commit/tree com novo pai exige refazer só o commit final (barato); janela de corrida continua existindo (retry único, depois falha com instrução clara).
-
-## 10. Tema de cor acento configurável — S
-
-**O que:** além do claro/escuro atual, oferecer escolha da cor de acento (verde GitHub padrão, azul, roxo).
-
-**Por quê:** pedido recorrente em apps de upload; baixo custo com Material 3 (tokens dinâmicos).
-
-**Riscos:** nenhum funcional; manter contraste WCAG nas cores escolhidas.
-
----
-
-## Não recomendo (por ora)
-
-- **Upload de pastas inteiras grandes (>100 arquivos) sem fila:** a API Git Data faz 3 requests por arquivo; acima de ~100 arquivos o risco de rate limit (5.000/h autenticado) é real. Recomendo antes medir e, se necessário, agrupar via Git Tree API em lotes.
-- **Login OAuth via navegador:** o GitHub exige uma URL de callback registrada por app; sem domínio próprio o fluxo OAuth publicado não funciona — tokens finos continuam sendo o caminho correto aqui.
-
-## Minha priorização sugerida
-
-1. **#1 Foreground service** (fecharia o ciclo de confiabilidade iniciado no v0.2.5)
-2. **#3 Histórico** (S, ganho imediato de UX)
-3. **#9 Detecção de conflito** (elimina a falha mais confusa do fluxo)
-4. **#6 Mensagem multilinha** (S, polish)
-5. Resto conforme seu uso real.
+- **versionCode 13, versionName 0.2.7** — instala por cima de qualquer versão anterior (mesma chave de assinatura).
+- A tela, strings e diálogos voltam ao visual do 0.2.6; nenhuma string de fila/histórico/notificação/acento resta no APK.
+- Se um push falhar por rede, o comportamento é o do 0.2.6: mensagem de erro na linha de status; o usuário toca Push de novo quando quiser.

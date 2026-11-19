@@ -5,15 +5,11 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.provider.DocumentsContract
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.ArrayAdapter
-import android.widget.DatePicker
 import android.widget.EditText
 import android.widget.Filter
 import android.widget.ImageButton
@@ -23,6 +19,7 @@ import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.TimePicker
 import android.widget.Toast
+import android.widget.DatePicker
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -33,7 +30,6 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import com.zippush.app.engine.PushManager
 import com.zippush.app.engine.UploadEngine
 import com.zippush.app.net.GitHubClient
 import com.zippush.app.storage.TokenVault
@@ -47,6 +43,27 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
+/**
+ * Zip2Push v0.2.7 — the v0.2.x architecture restored.
+ *
+ * The v0.3.x line (background push service, pending queue, push history,
+ * share target, accent colours, folder autocomplete, notification
+ * permission) is gone: those subsystems carried the crashes reported
+ * since 0.3.0. What remains is exactly what the last fully-working
+ * version (0.2.6) did, plus the new "Add description" behaviour:
+ *
+ *  - a push runs in the activity's own scope on Dispatchers.IO; it does
+ *    NOT survive rotation (same as 0.2.6 — the upload either finishes
+ *    or the user re-taps Push; no background machinery to break);
+ *  - every coroutine error lands on the status line (crashGuard), so
+ *    nothing kills the process;
+ *  - Add description: the field starts collapsed. "Add description"
+ *    expands it and disappears. While the field is EMPTY, a "Hide
+ *    description" button is available to collapse it again; once the
+ *    user typed something, the collapse affordance is gone (their text
+ *    must not be silently hidden). Title + blank line + body is the
+ *    standard Git commit format.
+ */
 class MainActivity : AppCompatActivity() {
 
     companion object {
@@ -62,7 +79,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var accountBtn: MaterialButton
     private lateinit var repoDropdown: MaterialAutoCompleteTextView
     private lateinit var branchDropdown: MaterialAutoCompleteTextView
-    private lateinit var targetDirInput: TextInputEditText
+    private lateinit var targetDirInput: MaterialAutoCompleteTextView
     private lateinit var commitMessageInput: TextInputEditText
     private lateinit var backdateBtn: MaterialButton
 
@@ -83,6 +100,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var themeToggleBtn: ImageButton
     private lateinit var reloadBtn: ImageButton
     private lateinit var pickerRow: LinearLayout
+    private lateinit var commitBodyLayout: TextInputLayout
+    private lateinit var commitBodyInput: TextInputEditText
+    private lateinit var commitExpandBtn: MaterialButton
+    private lateinit var commitCollapseBtn: MaterialButton
 
     // ------------------------------------------------------------------ state
     private lateinit var vault: TokenVault
@@ -158,13 +179,29 @@ class MainActivity : AppCompatActivity() {
         scope.launch { loadRepos() }
     }
 
+    /**
+     * Test seam for the push-flow tests: connect a REAL client pointed
+     * at a test server (MockWebServer) and load the repo list through
+     * the real HTTP path — the success path of [connectWithToken],
+     * minus the vault write.
+     */
+    internal fun connectWithBaseUrlForTest(token: String, baseUrl: String) {
+        val c = GitHubClient(token, baseUrl)
+        client = c
+        engine = UploadEngine(c)
+        scope.launch { loadRepos() }
+    }
+
     /** Test hook: the current dropdown texts (repo names + trailing ""). */
     internal fun repoItemTextsForTest(): List<String> = repoItems.map { it.toString() }
 
     /** Test hook: whether the busy overlay (progress) is showing. */
     internal fun isBusyFlagForTest(): Boolean = progress.visibility == View.VISIBLE
     internal val tracker = SelectionTracker()
-    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** True while a push coroutine from THIS activity instance is running. */
+    @Volatile
+    private var pushRunning = false
 
     /**
      * Last-resort safety net: any exception escaping a coroutine shows on
@@ -172,6 +209,7 @@ class MainActivity : AppCompatActivity() {
      */
     private val crashGuard = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("Zip2Push", "Uncaught coroutine error", throwable)
+        pushRunning = false
         if (alive) {
             setStatus(
                 getString(R.string.unexpected_error, throwable.message ?: "unknown"),
@@ -187,18 +225,8 @@ class MainActivity : AppCompatActivity() {
     /** True while this activity instance is still usable for UI updates. */
     private var alive = true
 
-    /**
-     * Re-renders PushManager state (running / done) into this activity
-     * instance. Re-attached by every recreation, so a push started
-     * before a rotation still shows its result afterwards.
-     */
-    private val pushObserver = PushManager.Observer { st -> renderPushState(st) }
-
     override fun onDestroy() {
         alive = false
-        PushManager.removeObserver(pushObserver)
-        // Only the activity's own scope dies here; an in-flight push lives
-        // in PushManager and continues in the background (see PushManager).
         scope.cancel()
         super.onDestroy()
     }
@@ -272,10 +300,14 @@ class MainActivity : AppCompatActivity() {
         themeToggleBtn = findViewById(R.id.themeToggleBtn)
         reloadBtn = findViewById(R.id.reloadBtn)
         pickerRow = findViewById(R.id.pickerRow)
+        commitBodyLayout = findViewById(R.id.commitBodyLayout)
+        commitBodyInput = findViewById(R.id.commitBodyInput)
+        commitExpandBtn = findViewById(R.id.commitExpandBtn)
+        commitCollapseBtn = findViewById(R.id.commitCollapseBtn)
 
         // Enforce EXACT equality of the Files / Folder buttons. LinearLayout
-        // weight rounding can differ by a pixel on odd-width rows; after the
-        // row is laid out we clamp both buttons to the same width/height.
+        // weight rounding can differ by a pixel on odd-width rows; after
+        // the row is laid out we clamp both buttons to the same width/height.
         pickerRow.viewTreeObserver.addOnGlobalLayoutListener(
             object : ViewTreeObserver.OnGlobalLayoutListener {
                 override fun onGlobalLayout() {
@@ -289,10 +321,6 @@ class MainActivity : AppCompatActivity() {
         themeToggleBtn.setOnClickListener { toggleTheme() }
 
         vault = TokenVault(this)
-
-        // A push may have been started by a previous activity instance
-        // (rotation / background). Re-attach to render its state or result.
-        PushManager.addObserver(pushObserver)
 
         // Restore a repo chosen before a configuration change right away:
         // the field shows it immediately (the list refresh re-matches it
@@ -360,6 +388,22 @@ class MainActivity : AppCompatActivity() {
         reloadBtn.setOnClickListener { onReloadClicked() }
         backdateBtn.setOnClickListener { showBackdateDialog() }
 
+        // ------------------------------------------------ description (0.2.7)
+        // "Add description" expands the (initially collapsed) field and
+        // disappears — it has no further use once the field is open.
+        commitExpandBtn.setOnClickListener { setDescriptionExpanded(true) }
+        // The collapse button only ever shows while the field is EMPTY:
+        // the user opened it by accident and wants it gone. Once text is
+        // typed it stays away, so typed content is never hidden.
+        commitCollapseBtn.setOnClickListener { setDescriptionExpanded(false) }
+        commitBodyInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                refreshCollapseButton()
+            }
+        })
+
         // Auto-connect to the active or pending account on launch.
         val token = vault.loadToken()
         if (token != null) {
@@ -369,6 +413,46 @@ class MainActivity : AppCompatActivity() {
             setStatus(getString(R.string.status_ready), StatusKind.INFO)
         }
     }
+
+    // ------------------------------------------------- description (v0.2.7)
+
+    /** True when the optional description field is visible. */
+    internal fun isDescriptionExpanded(): Boolean =
+        commitBodyLayout.visibility == View.VISIBLE
+
+    /** True when the description field has no user text. */
+    internal fun isDescriptionEmpty(): Boolean =
+        commitBodyInput.text?.toString()?.isBlank() != false
+
+    /**
+     * Shows / hides the optional description field and syncs both buttons:
+     *  - expand button: visible only while the field is collapsed;
+     *  - collapse button: visible only while the field is expanded AND
+     *    empty (v0.2.7 spec: "while not entering anything inside this
+     *    text box, the user should see a button to collapse that field").
+     */
+    internal fun setDescriptionExpanded(expanded: Boolean) {
+        commitBodyLayout.visibility = if (expanded) View.VISIBLE else View.GONE
+        if (!expanded) commitBodyInput.setText("")
+        // "Add description" has no further use once the field is open.
+        commitExpandBtn.visibility = if (expanded) View.GONE else View.VISIBLE
+        refreshCollapseButton()
+    }
+
+    /** Re-evaluates the collapse button against the field's content. */
+    private fun refreshCollapseButton() {
+        commitCollapseBtn.visibility =
+            if (isDescriptionExpanded() && isDescriptionEmpty()) View.VISIBLE else View.GONE
+    }
+
+    // Test hooks for the description behaviour.
+    internal fun expandBtnVisibilityForTest(): Int = commitExpandBtn.visibility
+    internal fun collapseBtnVisibilityForTest(): Int = commitCollapseBtn.visibility
+    internal fun setDescriptionTextForTest(text: String?) {
+        commitBodyInput.setText(text)
+    }
+    internal fun descriptionTextForTest(): String =
+        commitBodyInput.text?.toString().orEmpty()
 
     // ----------------------------------------------------------- status line
 
@@ -391,9 +475,9 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Clamps the Files / Folder buttons to identical width/height and
-     * balances the leftover pixel into the row's outer padding (keeps the
-     * pair centered). Weights are dropped once the width is fixed — a
-     * LinearLayout re-derives weighted children's width on every measure
+     * balances the leftover pixel into the row's outer padding (keeps
+     * the pair centered). Weights are dropped once the width is fixed —
+     * a LinearLayout re-derives weighted children's width on every measure
      * pass, which would undo the correction.
      */
     internal fun equalizePickerButtons() {
@@ -543,21 +627,21 @@ class MainActivity : AppCompatActivity() {
     /** Recursively lists files under [treeUri]; paths relative to the folder root. */
     private fun walkDocumentTree(treeUri: Uri): FolderWalkResult {
         return try {
-            val root = DocumentsContract.getTreeDocumentId(treeUri) // e.g. "primary:Pictures/MyFolder"
+            val root = android.provider.DocumentsContract.getTreeDocumentId(treeUri) // e.g. "primary:Pictures/MyFolder"
             val rootName = root.substringAfterLast('/').ifBlank { "folder" }
             val files = mutableListOf<SelectionTracker.FolderFile>()
             val stack = ArrayDeque(listOf(root))
             while (stack.isNotEmpty()) {
                 val dirId = stack.removeLast()
-                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(
                     treeUri, dirId
                 )
                 contentResolver.query(
                     childrenUri,
                     arrayOf(
-                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                        DocumentsContract.Document.COLUMN_MIME_TYPE
+                        android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE
                     ),
                     null, null, null
                 )?.use { cursor ->
@@ -565,7 +649,7 @@ class MainActivity : AppCompatActivity() {
                         val docId = cursor.getString(0)
                         val name = cursor.getString(1)
                         val mime = cursor.getString(2)
-                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
                             stack.addLast(docId)
                         } else {
                             // Repo path: folder-root-relative, forward slashes.
@@ -573,7 +657,7 @@ class MainActivity : AppCompatActivity() {
                             val repoPath = relative.ifBlank { name }
                             files.add(
                                 SelectionTracker.FolderFile(
-                                    DocumentsContract.buildDocumentUriUsingTree(treeUri, docId),
+                                    android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, docId),
                                     repoPath
                                 )
                             )
@@ -687,6 +771,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
         vault.setActiveLogin(login)
+        // Switching accounts keeps the picked files — the selection is
+        // account-independent; only repo access changes.
         connectWithToken(token)
     }
 
@@ -699,12 +785,14 @@ class MainActivity : AppCompatActivity() {
         branches.clear()
         branchItems.clear()
         // Session state too: a new login is a new session (the repo
-        // dropdown may auto-open again for the fresh account).
+        // dropdown may auto-open again for the fresh account). Picked
+        // FILES survive — they belong to the user, not the account.
         SessionState.clear()
         repoDropdown.setText("", false)
         (repoDropdown.adapter as? ArrayAdapter<*>)?.clear()
         branchDropdown.setText("", false)
         (branchDropdown.adapter as? ArrayAdapter<*>)?.clear()
+        targetDirInput.setAdapter(null)
         updateAccountButton()
         setStatus(getString(R.string.status_ready), StatusKind.INFO)
     }
@@ -1110,6 +1198,10 @@ class MainActivity : AppCompatActivity() {
         branchDropdown.setText("", false)
         targetDirInput.setText("")
         commitMessageInput.setText("")
+        // The description collapses back to its hidden state (and its
+        // text is cleared), so the next push starts from the same clean
+        // form the user saw at launch.
+        setDescriptionExpanded(false)
         resetBackdate()
         viewRepoBtn.visibility = View.GONE
         lastCommitUrl = null
@@ -1277,61 +1369,20 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------- push
 
-    /**
-     * Renders PushManager state into the UI. Called for the live instance
-     * and again for every recreated instance (rotation) — that is how a
-     * push that started before the rotation still shows "Pushing…" and
-     * its final result afterwards.
-     */
-    private fun renderPushState(st: PushManager.State) {
-        if (!alive) return
-        when (st) {
-            is PushManager.State.Running -> {
-                setBusy(true)
-                setStatus(st.job.description, StatusKind.PROGRESS)
-            }
-            is PushManager.State.Done -> {
-                setBusy(false)
-                when (val result = st.result) {
-                    is UploadEngine.PushResult.Success -> {
-                        setStatus(
-                            getString(R.string.push_success, result.filesPushed, result.commitUrl),
-                            StatusKind.SUCCESS
-                        )
-                        lastCommitUrl = result.commitUrl
-                        viewRepoBtn.visibility = View.VISIBLE
-                        Toast.makeText(this, "Pushed ✓", Toast.LENGTH_SHORT).show()
-                        // Clear the picked files, the commit message AND the
-                        // backdate so the user starts fresh with the next
-                        // upload. The repo / branch selection stays (users
-                        // usually push again to the same place).
-                        tracker.clear()
-                        commitMessageInput.setText("")
-                        resetBackdate()
-                        refreshSelectionSummary()
-                    }
-                    is UploadEngine.PushResult.Failure -> {
-                        setStatus(
-                            getString(R.string.push_failed, result.stage, result.message),
-                            StatusKind.ERROR
-                        )
-                    }
-                }
-            }
-            PushManager.State.Idle -> {
-                // Nothing running and nothing to show — e.g. right after
-                // attach when no push ever started. Keep current UI.
-            }
-        }
-    }
-
     private fun onPushClicked() {
+        if (pushRunning) {
+            setStatus(getString(R.string.push_in_progress), StatusKind.PROGRESS)
+            return
+        }
         val repo = selectedRepo
         val branch = selectedBranch?.name
             ?: selectedRepo?.defaultBranch?.takeIf { it.isNotBlank() }
         val targetDir = targetDirInput.text?.toString()?.trim().orEmpty()
-        val msg = commitMessageInput.text?.toString()?.trim().orEmpty()
+        // Title + blank line + body is the standard Git commit format.
+        val title = commitMessageInput.text?.toString()?.trim().orEmpty()
             .ifBlank { "Upload via ZipPush" }
+        val body = commitBodyInput.text?.toString()?.trim().orEmpty()
+        val msg = if (body.isBlank()) title else "$title\n\n$body"
 
         if (repo == null) {
             setStatus(getString(R.string.pick_repo_first), StatusKind.ERROR)
@@ -1345,82 +1396,133 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Capture everything the push needs from THIS activity instance on
-        // the main thread, before handing over to PushManager: the ISO
-        // string (no java.time on API 24 — must not run on the IO path),
-        // the login for the author fields, and the content resolver reads.
         val engine = engine ?: return
+        // Capture everything the push needs from THIS activity instance on
+        // the main thread, before hopping to IO: the ISO string (no
+        // java.time on API 24 — must not run on the IO path) and the
+        // login for the author fields.
         val authorIso = backdateIso()
         val authorLogin = vault.activeLogin()
-        val description = "Pushing to ${repo.fullName}…"
+        pushRunning = true
+        setBusy(true)
+        setStatus("Pushing to ${repo.fullName}…", StatusKind.PROGRESS)
 
-        val started = PushManager.start(description) {
-            // Runs on PushManager's own scope: survives rotation and the
-            // activity going to the background.
-            val files = withContext(Dispatchers.IO) {
-                val list = mutableListOf<UploadEngine.PendingFile>()
-                selection.zip?.let { uri ->
-                    runCatching {
-                        val f = copyUriToCache(uri)
-                        list.addAll(engine.extractZipEntries(f, skipRootFolder = true))
-                    }.onFailure {
-                        mainHandler.post {
-                            setStatus("Failed reading ZIP: ${it.message}", StatusKind.ERROR)
-                        }
-                    }
-                }
-                for (u in selection.files) {
-                    runCatching {
-                        val name = queryDisplayName(u) ?: "file${list.size}"
-                        val bytes = contentResolver.openInputStream(u)?.use { it.readBytes() }
-                        if (bytes != null) list.add(UploadEngine.PendingFile(name, bytes))
-                    }
-                }
-                for (ff in selection.folderFiles) {
-                    runCatching {
-                        val bytes = contentResolver.openInputStream(ff.uri)?.use { it.readBytes() }
-                        if (bytes != null) list.add(UploadEngine.PendingFile(ff.repoPath, bytes))
-                    }
-                }
-                list
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                pushNow(engine, selection, repo, branch ?: "main", targetDir, msg, authorIso, authorLogin)
             }
-
-            if (files.isEmpty()) {
-                return@start UploadEngine.PushResult.Failure(
-                    "Prepare", getString(R.string.no_readable_files)
-                )
+            pushRunning = false
+            if (!alive || isFinishing) return@launch
+            setBusy(false)
+            when (result) {
+                is UploadEngine.PushResult.Success -> {
+                    setStatus(
+                        getString(R.string.push_success, result.filesPushed, result.commitUrl),
+                        StatusKind.SUCCESS
+                    )
+                    lastCommitUrl = result.commitUrl
+                    viewRepoBtn.visibility = View.VISIBLE
+                    Toast.makeText(this@MainActivity, "Pushed ✓", Toast.LENGTH_SHORT).show()
+                    // Clear the picked files, the commit message AND the
+                    // backdate so the user starts fresh with the next
+                    // upload. The repo / branch selection stays (users
+                    // usually push again to the same place).
+                    tracker.clear()
+                    commitMessageInput.setText("")
+                    setDescriptionExpanded(false)
+                    resetBackdate()
+                    refreshSelectionSummary()
+                }
+                is UploadEngine.PushResult.Failure -> {
+                    setStatus(
+                        getString(R.string.push_failed, result.stage, result.message),
+                        StatusKind.ERROR
+                    )
+                }
             }
-
-            withContext(Dispatchers.IO) {
-                engine.push(
-                    owner = repo.owner,
-                    repo = repo.name,
-                    branch = branch ?: "main",
-                    newBranch = null,
-                    targetDir = targetDir,
-                    commitMessage = msg,
-                    files = files,
-                    authorDate = authorIso,
-                    authorLogin = authorLogin
-                )
-            }
-        }
-        if (!started) {
-            // A push is already in flight (double tap, or one surviving a
-            // rotation). Show the running status instead of starting over.
-            setStatus(getString(R.string.push_in_progress), StatusKind.PROGRESS)
         }
     }
 
+    /**
+     * The upload itself (v0.2.x behaviour): builds the file list from the
+     * snapshotted selection and runs the engine. Always runs on IO.
+     */
+    private fun pushNow(
+        engine: UploadEngine,
+        selection: SelectionTracker.Snapshot,
+        repo: GitHubClient.Repo,
+        branch: String,
+        targetDir: String,
+        msg: String,
+        authorIso: String?,
+        authorLogin: String?
+    ): UploadEngine.PushResult {
+        val files = mutableListOf<UploadEngine.PendingFile>()
+
+        // The ZIP (if any) contributes entries with their inner paths.
+        // A failed read (expired URI grant, provider gone) skips the
+        // archive — the user sees "no readable files" instead of a crash.
+        selection.zip?.let { uri ->
+            val cached = runCatching { copyUriToCache(uri) }.getOrNull()
+            if (cached != null) {
+                runCatching {
+                    files.addAll(engine.extractZipEntries(cached, skipRootFolder = true))
+                }
+                // The cache copy is no longer needed once parsed.
+                cached.delete()
+            }
+        }
+
+        // Standalone files and folder files: one item each. Folder files
+        // keep their repo paths.
+        val named = mutableListOf<Pair<String, ByteArray>>()
+        for (u in selection.files) {
+            val name = runCatching { queryDisplayName(u) }.getOrNull() ?: "file"
+            val bytes = runCatching {
+                contentResolver.openInputStream(u)?.use { it.readBytes() }
+            }.getOrNull()
+            if (bytes != null) named.add(name to bytes)
+        }
+        for (ff in selection.folderFiles) {
+            val bytes = runCatching {
+                contentResolver.openInputStream(ff.uri)?.use { it.readBytes() }
+            }.getOrNull()
+            if (bytes != null) named.add(ff.repoPath to bytes)
+        }
+        files.addAll(engine.collectNamedFiles(named))
+
+        if (files.isEmpty()) {
+            return UploadEngine.PushResult.Failure("Prepare", getString(R.string.no_readable_files))
+        }
+
+        return engine.push(
+            owner = repo.owner,
+            repo = repo.name,
+            branch = branch,
+            newBranch = null,
+            targetDir = targetDir,
+            commitMessage = msg,
+            files = files,
+            authorDate = authorIso,
+            authorLogin = authorLogin
+        )
+    }
+
     private fun copyUriToCache(uri: Uri): File {
-        val target = File(cacheDir, "zippush_upload.zip")
+        // Unique name per copy: a previous push's cache file could still
+        // be held open by the engine when a second push reused the same
+        // path, and a partial overwrite corrupted the archive read.
+        val target = File(cacheDir, "zippush_upload_${System.nanoTime()}.zip")
         contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(target).use { output -> input.copyTo(output) }
+        }
+        if (!target.exists() || target.length() == 0L) {
+            throw java.io.IOException("empty or unreadable archive")
         }
         return target
     }
 
-    private fun queryDisplayName(uri: Uri): String? {
+    private fun queryDisplayName(uri: Uri): String? = try {
         var name: String? = null
         contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
@@ -1428,7 +1530,12 @@ class MainActivity : AppCompatActivity() {
                 if (idx >= 0) name = cursor.getString(idx)
             }
         }
-        return name
+        name
+    } catch (e: Exception) {
+        // Providers can throw SecurityException for expired grants or
+        // disappear entirely (uninstalled app) — the fallback name is
+        // enough; a crash here would kill an in-flight push.
+        null
     }
 
     private fun setBusy(busy: Boolean) {

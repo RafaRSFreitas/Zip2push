@@ -103,8 +103,12 @@ class TokenVault(context: Context) {
                 .remove(LEGACY_KEY_TOKEN)
                 .apply()
         } catch (e: Exception) {
-            Log.e(TAG, "Legacy token migration failed", e)
-            prefs.edit().remove(LEGACY_KEY_IV).remove(LEGACY_KEY_TOKEN).apply()
+            // Bug 1.2: never delete the legacy blob on failure. Removing it
+            // here destroyed the user's only copy of the token when the
+            // failure was transient (e.g. Keystore unavailable right after
+            // an OS update / direct-boot). Keep it and retry on the next
+            // read; the user can still fix it manually.
+            Log.e(TAG, "Legacy token migration failed; keeping legacy data for retry", e)
         }
     }
 

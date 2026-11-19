@@ -53,7 +53,7 @@
     <string name="folder_empty">No files found in the selected folder.</string>
     <string name="clear_selection">Clear selection</string>
     <string name="push_to_github">Push to GitHub</string>
-    <string name="push_in_progress">A push is already in progress — it continues in the background; you can keep the app open or come back later.</string>
+    <string name="push_in_progress">A push is already in progress — please wait for it to finish.</string>
     <string name="pick_repo_first">Select a repository first</string>
     <string name="pick_files_first">Pick a ZIP or some files first</string>
     <string name="no_readable_files">No readable files found in the selection.</string>
@@ -93,4 +93,15 @@
     <string name="about_oss_title">Open source</string>
     <string name="about_oss_body">Built with Kotlin, Material 3 and the GitHub REST API. Typeface: Geist (SIL Open Font License).</string>
     <string name="about_not_affiliated_title">Disclaimer</string>
+
+    <!-- ======================= v0.3.0 (bugs + features) ======================= -->
+    <!-- 2.6 multiline commit -->
+    <string name="commit_expand_desc">Add description</string>
+    <string name="commit_collapse_desc">Hide description</string>
+    <string name="commit_body_hint">Optional description (supports multiple lines)</string>
+    <!-- 2.5 multi-account -->
+    <!-- 2.7 share target -->
+    <!-- 2.1 foreground service -->
+    <!-- 2.10 accent -->
+    <!-- 2.9 conflict -->
 </resources>

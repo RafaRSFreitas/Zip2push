@@ -16,8 +16,8 @@ android {
         applicationId "com.zippush.app"
         minSdk 24
         targetSdk 34
-        versionCode 8
-        versionName "0.2.6"
+        versionCode 13
+        versionName "0.2.7"
     }
 
     signingConfigs {
@@ -65,6 +65,8 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+    // ZIP64 + non-UTF-8 names + tar/tar.gz support (bug 1.6 / feature 2.8).
+    implementation 'org.apache.commons:commons-compress:1.26.2'
 
     // Unit tests (JVM, Robolectric — no device needed)
     testImplementation 'junit:junit:4.13.2'

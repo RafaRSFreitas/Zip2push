@@ -162,11 +162,13 @@
                         android:hint="@string/target_dir_hint"
                         app:helperText="@string/target_dir_helper">
 
-                        <com.google.android.material.textfield.TextInputEditText
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
                             android:id="@+id/targetDirInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:inputType="text" />
+                        <!-- Feature 2.4: hints from the repo's real folder
+                             tree once a repo is selected. -->
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
@@ -183,6 +185,56 @@
                             android:minLines="2"
                             android:gravity="top" />
                     </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- Optional multi-line description body, collapsed by
+                         default (v0.2.7 behaviour). Title + blank line +
+                         body is the standard Git commit message format. -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/commitBodyLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/commit_body_hint"
+                        android:visibility="gone">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/commitBodyInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textMultiLine"
+                            android:minLines="3"
+                            android:gravity="top" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- v0.2.7 description affordances, right-aligned:
+                         "Add description" shows while the field is hidden;
+                         "Hide description" shows while the field is open
+                         AND empty (typed text is never hidden). -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="end">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/commitExpandBtn"
+                            style="@style/Widget.ZipPush.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/commit_expand_desc"
+                            android:maxLines="1" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/commitCollapseBtn"
+                            style="@style/Widget.ZipPush.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/commit_collapse_desc"
+                            android:maxLines="1"
+                            android:visibility="gone" />
+                    </LinearLayout>
 
                     <!-- Commit date row: defaults to "Now"; tap to open the
                          backdate picker (date + time + warning). -->

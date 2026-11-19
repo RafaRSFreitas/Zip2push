@@ -97,14 +97,17 @@ class GitHubClient(
     // Low-level request helpers
     // ---------------------------------------------------------------------
 
-    private fun newConnection(url: String, method: String): HttpURLConnection {
+    private fun newConnection(url: String, method: String, timeoutMs: Int = DEFAULT_READ_TIMEOUT_MS): HttpURLConnection {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.setRequestProperty("Accept", "application/vnd.github+json")
         conn.setRequestProperty("Authorization", "Bearer $token")
         conn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
         conn.setRequestProperty("User-Agent", "ZipPush-Android")
         conn.connectTimeout = 15_000
-        conn.readTimeout = 60_000
+        // Bug 1.7: 60 s was too short for large blobs on slow networks —
+        // uploads died mid-push. Default is now generous; callers doing
+        // quick metadata reads keep the default.
+        conn.readTimeout = timeoutMs
         try {
             conn.requestMethod = method
         } catch (e: java.net.ProtocolException) {
@@ -130,10 +133,15 @@ class GitHubClient(
         }
     }
 
-    private inline fun <reified T> execute(url: String, method: String, body: String? = null): ApiResult<T> {
+    private inline fun <reified T> execute(
+        url: String,
+        method: String,
+        body: String? = null,
+        readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS
+    ): ApiResult<T> {
         var conn: HttpURLConnection? = null
         try {
-            conn = newConnection(url, method)
+            conn = newConnection(url, method, readTimeoutMs)
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -270,17 +278,31 @@ class GitHubClient(
             .put("content", base64NoWrap(bytes))
             .put("encoding", "base64")
         return when (val r = execute<JSONObject>(
-            "$baseUrl/repos/$owner/$repo/git/blobs", "POST", body.toString()
+            "$baseUrl/repos/$owner/$repo/git/blobs", "POST", body.toString(),
+            readTimeoutMs = UPLOAD_READ_TIMEOUT_MS
         )) {
             is ApiResult.Success -> ApiResult.Success(r.data.getString("sha"))
             is ApiResult.Error -> r
         }
     }
 
-    /** GET /repos/{owner}/{repo}/git/trees/{treeSha}?recursive=1 */
+    /**
+     * GET /repos/{owner}/{repo}/git/trees/{treeSha}?recursive=1 — full
+     * recursive listing. Used by the target-directory autocomplete (2.4)
+     * and by the conflict-retry base-tree refresh (2.9).
+     * A "truncated" response on huge repos is surfaced as an error so the
+     * caller can fall back instead of silently missing paths.
+     */
     fun getTree(owner: String, repo: String, treeSha: String): ApiResult<JSONObject> {
         val url = "$baseUrl/repos/$owner/$repo/git/trees/$treeSha?recursive=1"
-        return execute(url, "GET")
+        return when (val r = execute<JSONObject>(url, "GET")) {
+            is ApiResult.Success -> {
+                if (r.data.optBoolean("truncated", false)) {
+                    ApiResult.Error(-1, "repository tree too large to list")
+                } else r
+            }
+            is ApiResult.Error -> r
+        }
     }
 
     /** POST /repos/{owner}/{repo}/git/trees — build the new tree. */
@@ -370,6 +392,15 @@ class GitHubClient(
     companion object {
         /** Safety cap for paginated list endpoints (100 pages × 100 items). */
         private const val MAX_PAGES = 100
+
+        /** Default socket read timeout for metadata requests. */
+        internal const val DEFAULT_READ_TIMEOUT_MS = 60_000
+
+        /**
+         * Blob uploads move potentially large payloads — allow slow links
+         * three minutes before giving up (bug 1.7).
+         */
+        internal const val UPLOAD_READ_TIMEOUT_MS = 180_000
 
         /**
          * Base64 without line wraps. java.util.Base64 is API 26+ and the
