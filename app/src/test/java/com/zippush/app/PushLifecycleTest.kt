@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import com.zippush.app.engine.PushManager
@@ -30,6 +31,9 @@ import org.robolectric.shadows.ShadowLooper
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class PushLifecycleTest {
+
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
 
     /** Set to true to release the parked push body. */
     @Volatile

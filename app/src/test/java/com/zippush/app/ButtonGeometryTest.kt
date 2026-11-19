@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,6 +16,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-normal-long-notround")
 class ButtonGeometryTest {
+
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
 
     private fun checkGeometry() {
         val controller = Robolectric.buildActivity(MainActivity::class.java)

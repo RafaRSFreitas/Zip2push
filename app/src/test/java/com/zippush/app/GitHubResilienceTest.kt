@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import android.widget.AutoCompleteTextView
 import android.widget.Button
 import com.zippush.app.net.GitHubClient
@@ -31,6 +32,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class GitHubResilienceTest {
+
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
 
     // ------------------------------------------------------------ client level
 

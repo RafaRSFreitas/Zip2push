@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -29,6 +30,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [24])
 class BackdateApi24Test {
+
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
 
     private fun launch(): MainActivity {
         val controller = Robolectric.buildActivity(MainActivity::class.java)

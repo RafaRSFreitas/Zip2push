@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import androidx.appcompat.app.AppCompatDelegate
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -17,6 +18,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-normal-long-notround")
 class ThemeToggleTest {
+
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
 
     private fun prefValue(activity: MainActivity) =
         activity.getPreferences(android.content.Context.MODE_PRIVATE)

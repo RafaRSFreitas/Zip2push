@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color

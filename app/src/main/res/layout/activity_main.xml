@@ -316,8 +316,8 @@
 
         <ImageView
             android:id="@+id/statusIcon"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
             android:src="@drawable/ic_info"
             app:tint="?attr/colorOnSurfaceVariant"
             android:contentDescription="@null" />
@@ -328,7 +328,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="@color/status_text"
             android:maxLines="2"
             android:ellipsize="end"

@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import android.widget.Button
 import android.widget.DatePicker
 import android.widget.TimePicker
@@ -26,6 +27,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class BackdateTest {
+
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
 
     private fun launch(): MainActivity {
         val controller = Robolectric.buildActivity(MainActivity::class.java)

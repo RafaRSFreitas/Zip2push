@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import android.widget.Button
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -20,10 +21,15 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class MainActivityClearTest {
 
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
+
     private lateinit var activity: MainActivity
 
     @Before
     fun setup() {
+        // SessionState is a process singleton; isolate tests from each other.
+        SessionState.resetForTest()
         // No stored token -> activity starts in the idle state, no network.
         val controller = Robolectric.buildActivity(MainActivity::class.java)
         controller.setup()

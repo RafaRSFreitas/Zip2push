@@ -93,9 +93,13 @@ class MainActivity : AppCompatActivity() {
     /** Dropdown model: a repository row, or the create-repository action. */
     private sealed class RepoItem {
         class Repo(val repo: GitHubClient.Repo) : RepoItem() {
-            /** The dropdown writes toString() of the picked item into the
-             *  field — must be the repo name, not an object address. */
-            override fun toString() = repo.fullName
+            /**
+             * The dropdown writes toString() of the picked item into the
+             * field. Users asked for just the repo name here — the owner
+             * prefix repeated the same account over and over and made
+             * rows long. The full name still shows in status messages.
+             */
+            override fun toString() = repo.name
         }
         object CreateAction : RepoItem() {
             override fun toString() = ""
@@ -107,9 +111,58 @@ class MainActivity : AppCompatActivity() {
         fun repoItemText(repo: GitHubClient.Repo): String = RepoItem.Repo(repo).toString()
     }
     private val repoItems = mutableListOf<RepoItem>()
-    internal var selectedRepo: GitHubClient.Repo? = null
+
+    /**
+     * Test hook: set whenever the repo dropdown is programmatically
+     * shown (auto-open after loading). Tests reset it and check whether
+     * a rotation / reload popped the dropdown open again.
+     */
+    internal var repoDropdownWasShown = false
+        private set
+
+    /** Test hook: clear the auto-open marker between assertions. */
+    fun resetRepoDropdownWasShownForTest() { repoDropdownWasShown = false }
+
+    /** Only path allowed to auto-open the repo dropdown. */
+    private fun maybeAutoOpenRepoDropdown() {
+        if (isFinishing || !alive) return
+        repoDropdownWasShown = true
+        repoDropdown.showDropDown()
+    }
+
+    /**
+     * Selected repo / branch. Backed by [SessionState] so a rotation
+     * does not wipe the selection: the recreated activity reads it back
+     * and does not re-open the repo dropdown as if nothing had been
+     * chosen.
+     */
+    internal var selectedRepo: GitHubClient.Repo?
+        get() = SessionState.selectedRepo
+        set(value) { SessionState.selectedRepo = value }
     private val branches = mutableListOf<GitHubClient.Branch>()
-    internal var selectedBranch: GitHubClient.Branch? = null
+    internal var selectedBranch: GitHubClient.Branch?
+        get() = SessionState.selectedBranch
+        set(value) { SessionState.selectedBranch = value }
+
+    /** Test seam: when non-null, loadRepos uses this instead of the network. */
+    internal var fakeRepoListForTest: List<GitHubClient.Repo>? = null
+
+    /** Test seam: when non-null, loadBranchesOf uses this instead of the network. */
+    internal var fakeBranchListForTest: List<GitHubClient.Branch>? = null
+
+    /** Test hook: connect a fake client and load the (faked) repo list. */
+    internal fun loadReposForTest(list: List<GitHubClient.Repo>) {
+        client = GitHubClient("test-token")
+        engine = UploadEngine(client!!)
+        fakeRepoListForTest = list
+        scope.launch { loadRepos() }
+    }
+
+    /** Test hook: the current dropdown texts (repo names + trailing ""). */
+    internal fun repoItemTextsForTest(): List<String> = repoItems.map { it.toString() }
+
+    /** Test hook: whether the busy overlay (progress) is showing. */
+    internal fun isBusyFlagForTest(): Boolean = progress.visibility == View.VISIBLE
     internal val tracker = SelectionTracker()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -155,6 +208,17 @@ class MainActivity : AppCompatActivity() {
         // Preserve the chosen backdate across rotation / process death so
         // it is not silently lost mid-flow.
         commitAuthorDate?.let { outState.putLong(STATE_BACKDATE_EPOCH, it.timeInMillis) }
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+        // super just reapplied the saved view state — which carries the
+        // OLD field text. The session is the source of truth for the
+        // repo/branch selection, so re-apply it on top. This also covers
+        // the case where the saved text is stale (e.g. cleared then
+        // rotated in the same frame).
+        SessionState.selectedRepo?.let { repoDropdown.setText(it.name, false) }
+        SessionState.selectedBranch?.let { branchDropdown.setText(it.name, false) }
     }
 
     /** Last pushed commit URL, used by the "View on GitHub" button. */
@@ -230,6 +294,12 @@ class MainActivity : AppCompatActivity() {
         // (rotation / background). Re-attach to render its state or result.
         PushManager.addObserver(pushObserver)
 
+        // Restore a repo chosen before a configuration change right away:
+        // the field shows it immediately (the list refresh re-matches it
+        // against the fresh data when it lands).
+        SessionState.selectedRepo?.let { repoDropdown.setText(it.name, false) }
+        SessionState.selectedBranch?.let { branchDropdown.setText(it.name, false) }
+
         // Restore the backdate chosen before a configuration change.
         val savedEpoch = savedInstanceState?.getLong(STATE_BACKDATE_EPOCH, -1L) ?: -1L
         if (savedEpoch > 0) {
@@ -246,7 +316,7 @@ class MainActivity : AppCompatActivity() {
                 is RepoItem.Repo -> scope.launch { onRepoSelected(item.repo) }
                 RepoItem.CreateAction -> {
                     // Restore the selected repo text (the click would clear it).
-                    repoDropdown.setText(selectedRepo?.fullName ?: "", false)
+                    repoDropdown.setText(selectedRepo?.name ?: "", false)
                     openCreateRepoInBrowser()
                 }
                 null -> Unit
@@ -628,8 +698,9 @@ class MainActivity : AppCompatActivity() {
         repoItems.clear()
         branches.clear()
         branchItems.clear()
-        selectedRepo = null
-        selectedBranch = null
+        // Session state too: a new login is a new session (the repo
+        // dropdown may auto-open again for the fresh account).
+        SessionState.clear()
         repoDropdown.setText("", false)
         (repoDropdown.adapter as? ArrayAdapter<*>)?.clear()
         branchDropdown.setText("", false)
@@ -637,6 +708,12 @@ class MainActivity : AppCompatActivity() {
         updateAccountButton()
         setStatus(getString(R.string.status_ready), StatusKind.INFO)
     }
+
+    /** Test hook: disconnect without touching the UI-less parts. */
+    internal fun disconnectForTest() = disconnect()
+
+    /** Test hook: manual reload path. */
+    internal fun onReloadClickedForTest() = onReloadClicked()
 
     // ------------------------------------------------------------------ logic
 
@@ -669,8 +746,13 @@ class MainActivity : AppCompatActivity() {
         setBusy(true)
         setStatus("Loading repositories…", StatusKind.PROGRESS)
         val c = client ?: return
-        when (val r = withContext(Dispatchers.IO) { c.listRepos() }) {
+        val fetched = withContext(Dispatchers.IO) {
+            fakeRepoListForTest?.let { return@withContext GitHubClient.ApiResult.Success(it) }
+            c.listRepos()
+        }
+        when (fetched) {
             is GitHubClient.ApiResult.Success -> {
+                val r = fetched
                 if (!alive) return
                 repos.clear()
                 repos.addAll(r.data)
@@ -678,20 +760,66 @@ class MainActivity : AppCompatActivity() {
                 setBusy(false)
                 if (repos.isEmpty()) {
                     setStatus(getString(R.string.repos_error, "no accessible repositories"), StatusKind.INFO)
-                } else if (repos.none { it.private }) {
-                    setStatus(getString(R.string.repos_loaded_public_only, repos.size), StatusKind.INFO)
-                    // The activity can be torn down while the list loads
-                    // (user backs out); showing a dropdown then crashes.
-                    if (reopenDropdown && alive && !isFinishing) repoDropdown.showDropDown()
                 } else {
-                    setStatus(getString(R.string.repos_loaded, repos.size), StatusKind.SUCCESS)
-                    if (reopenDropdown && alive && !isFinishing) repoDropdown.showDropDown()
+                    // Restore a selection made before a rotation: the repo
+                    // list may have been re-fetched, so re-match by name.
+                    val wanted = SessionState.selectedRepo
+                    val stillThere = wanted?.let { w -> repos.firstOrNull { it.fullName == w.fullName } }
+                    if (stillThere != null) {
+                        selectedRepo = stillThere
+                        repoDropdown.setText(stillThere.name, false)
+                        // Branch list is per-repo: only reload it when the
+                        // activity instance is fresh (its adapter is empty).
+                        if (branchItems.isEmpty() && selectedBranch == null) {
+                            loadBranchesOf(stillThere)
+                        } else if (selectedBranch != null) {
+                            branchDropdown.setText(selectedBranch!!.name, false)
+                        }
+                    }
+                    if (selectedRepo == null) {
+                        setStatus(
+                            if (repos.none { it.private })
+                                getString(R.string.repos_loaded_public_only, repos.size)
+                            else getString(R.string.repos_loaded, repos.size),
+                            StatusKind.INFO
+                        )
+                        // Auto-open only when nothing has been picked this
+                        // session. This is the rotation fix: a recreated
+                        // activity whose user already chose a repo must not
+                        // pop the dropdown open again.
+                        if (reopenDropdown && !SessionState.repoPickedThisSession) {
+                            maybeAutoOpenRepoDropdown()
+                        }
+                    } else {
+                        setStatus(
+                            getString(R.string.branches_loaded, selectedRepo!!.name, branches.size),
+                            StatusKind.SUCCESS
+                        )
+                    }
                 }
             }
             is GitHubClient.ApiResult.Error -> {
                 setBusy(false)
-                setStatus(getString(R.string.repos_error, r.message), StatusKind.ERROR)
+                setStatus(getString(R.string.repos_error, fetched.message), StatusKind.ERROR)
             }
+        }
+    }
+
+    /** Loads the branch list of [repo] without touching the repo selection. */
+    private suspend fun loadBranchesOf(repo: GitHubClient.Repo) {
+        val c = client ?: return
+        val fetched = withContext(Dispatchers.IO) {
+            fakeBranchListForTest?.let { return@withContext GitHubClient.ApiResult.Success(it) }
+            c.listBranches(repo.owner, repo.name)
+        }
+        when (fetched) {
+            is GitHubClient.ApiResult.Success -> {
+                if (!alive) return
+                branches.clear()
+                branches.addAll(fetched.data)
+                updateBranchItems()
+            }
+            is GitHubClient.ApiResult.Error -> Unit // status already says it
         }
     }
 
@@ -729,7 +857,7 @@ class MainActivity : AppCompatActivity() {
                         ?: LayoutInflater.from(context)
                             .inflate(R.layout.item_repo, parent, false)
                             .also { it.tag = "repo" }
-                    v.findViewById<TextView>(R.id.repoNameText).text = item.repo.fullName
+                    v.findViewById<TextView>(R.id.repoNameText).text = item.repo.name
                     val badge = v.findViewById<TextView>(R.id.repoTypeBadge)
                     if (item.repo.private) {
                         badge.text = getString(R.string.badge_private)
@@ -763,10 +891,14 @@ class MainActivity : AppCompatActivity() {
         setBusy(true)
         setStatus("Loading branches of ${repo.name}…", StatusKind.PROGRESS)
         val c = client ?: return
-        when (val r = withContext(Dispatchers.IO) { c.listBranches(repo.owner, repo.name) }) {
+        val fetched = withContext(Dispatchers.IO) {
+            fakeBranchListForTest?.let { return@withContext GitHubClient.ApiResult.Success(it) }
+            c.listBranches(repo.owner, repo.name)
+        }
+        when (fetched) {
             is GitHubClient.ApiResult.Success -> {
                 branches.clear()
-                branches.addAll(r.data)
+                branches.addAll(fetched.data)
                 updateBranchItems()
                 setBusy(false)
                 setStatus(
@@ -776,7 +908,7 @@ class MainActivity : AppCompatActivity() {
             }
             is GitHubClient.ApiResult.Error -> {
                 setBusy(false)
-                setStatus(getString(R.string.branches_error, r.message), StatusKind.ERROR)
+                setStatus(getString(R.string.branches_error, fetched.message), StatusKind.ERROR)
             }
         }
     }
@@ -787,9 +919,16 @@ class MainActivity : AppCompatActivity() {
         branches.forEach { branchItems.add(BranchItem.Branch(it)) }
         branchItems.add(BranchItem.CreateAction)
         branchDropdown.setAdapter(BranchAdapter())
-        // Preselect the default branch if present.
         val repo = selectedRepo ?: return
         if (branches.isNotEmpty()) {
+            // Keep a branch chosen before a rotation; only fall back to
+            // the repo's default branch (or the first) when none was.
+            val chosen = selectedBranch?.takeIf { b -> branches.any { it.name == b.name } }
+            if (chosen != null) {
+                selectedBranch = chosen
+                branchDropdown.setText(chosen.name, false)
+                return
+            }
             val defaultIdx = branches.indexOfFirst { it.name == repo.defaultBranch }
             val idx = if (defaultIdx >= 0) defaultIdx else 0
             selectedBranch = branches[idx]

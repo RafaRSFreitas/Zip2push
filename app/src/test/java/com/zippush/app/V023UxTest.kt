@@ -1,5 +1,6 @@
 package com.zippush.app
 
+import org.junit.Rule
 import android.widget.AutoCompleteTextView
 import android.widget.Button
 import android.widget.ImageButton
@@ -29,6 +30,9 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class V023UxTest {
 
+    @get:Rule
+    val sessionStateRule = SessionStateTestRule()
+
     private fun launch(): MainActivity {
         val controller = Robolectric.buildActivity(MainActivity::class.java)
         controller.setup()
@@ -43,8 +47,9 @@ class V023UxTest {
             owner = "octocat", private = false, defaultBranch = "main"
         )
         // What the dropdown writes into the field is the item's toString().
+        // v0.2.6: only the repo NAME (no owner prefix), per user request.
         val itemText = com.zippush.app.MainActivity.RepoItemForTest.repoItemText(repo)
-        assertEquals("octocat/hello-world", itemText)
+        assertEquals("hello-world", itemText)
         assertTrue("must not be an object address", !itemText.contains("@"))
     }
 
