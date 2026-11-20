@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ============================================================
+         JornalWeb design system (extracted from JornalWeb v1.4.7).
+         shadcn/ui "zinc" palette in oklch, converted to sRGB hex.
+         See docs/STYLE.md for the full reference.
+         ============================================================ -->
+
+    <!-- Shared -->
+    <color name="jw_ring_dim">#737373</color>
+
+    <!-- Status / feedback colors derived from the palette -->
+    <color name="status_bg">@color/jw_secondary</color>
+    <color name="status_text">@color/jw_muted_foreground</color>
+    <color name="status_success">#16A34A</color>  <!-- green-600 -->
+    <color name="status_error">#DC2626</color>    <!-- red-600 -->
+    <color name="push_link">@color/jw_foreground</color>
+
+    <!-- Launcher (kept from original branding) -->
+    <color name="ic_launcher_background">#0A0A0A</color>
+    <color name="ic_launcher_foreground">#FAFAFA</color>
+</resources>

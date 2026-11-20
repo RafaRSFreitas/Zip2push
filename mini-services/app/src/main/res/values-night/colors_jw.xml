@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night values of the JornalWeb zinc palette (`.dark` class in CSS). -->
+    <color name="jw_background">#0A0A0A</color>          <!-- oklch(14.5% 0 0) -->
+    <color name="jw_foreground">#FAFAFA</color>          <!-- oklch(98.5% 0 0) -->
+    <color name="jw_card">#171717</color>                <!-- oklch(20.5% 0 0) -->
+    <color name="jw_card_foreground">#FAFAFA</color>     <!-- oklch(98.5% 0 0) -->
+    <color name="jw_popover">#171717</color>             <!-- oklch(20.5% 0 0) -->
+    <color name="jw_popover_foreground">#FAFAFA</color>  <!-- oklch(98.5% 0 0) -->
+    <color name="jw_primary">#E5E5E5</color>             <!-- oklch(92.2% 0 0) -->
+    <color name="jw_primary_foreground">#171717</color>  <!-- oklch(20.5% 0 0) -->
+    <color name="jw_secondary">#262626</color>           <!-- oklch(26.9% 0 0) -->
+    <color name="jw_secondary_foreground">#FAFAFA</color><!-- oklch(98.5% 0 0) -->
+    <color name="jw_muted">#262626</color>               <!-- oklch(26.9% 0 0) -->
+    <color name="jw_muted_foreground">#A1A1A1</color>    <!-- oklch(70.8% 0 0) -->
+    <color name="jw_accent">#262626</color>              <!-- oklch(26.9% 0 0) -->
+    <color name="jw_accent_foreground">#FAFAFA</color>   <!-- oklch(98.5% 0 0) -->
+    <color name="jw_destructive">#FF6467</color>         <!-- oklch(70.4% .191 22.216) -->
+    <color name="jw_border">#1AFFFFFF</color>            <!-- oklch(100% 0 0/.1) -->
+    <color name="jw_input">#26FFFFFF</color>             <!-- oklch(100% 0 0/.15) -->
+    <color name="jw_ring">#737373</color>                <!-- oklch(55.6% 0 0) -->
+    <!-- JornalWeb dark form fields: fill = bg-input/30 (input 15% white,
+         mixed 30% over the card), border = input 15% white. This makes the
+         fields clearly visible against the card, unlike a bare stroke. -->
+    <color name="jw_input_fill">#212121</color>          <!-- card + input/30 -->
+    <color name="jw_input_border">#383838</color>        <!-- ~24% white over card -->
+    <color name="jw_input_border_focus">#525252</color>  <!-- zinc-600, focus ring base -->
+    <color name="jw_input_hint">#A1A1A1</color>          <!-- muted_foreground -->
+    <color name="jw_input_text">#FAFAFA</color>          <!-- foreground -->
+    <color name="jw_badge_public_bg">#262626</color>    <!-- secondary -->
+    <color name="jw_badge_public_text">#D4D4D8</color>  <!-- zinc-300 -->
+    <color name="jw_badge_private_bg">#3F1D1D</color>   <!-- red-950-ish overlay -->
+    <color name="jw_badge_private_text">#FCA5A5</color> <!-- red-300 -->
+
+    <!-- Status line (bottom bar) night colors -->
+    <color name="status_bg">@color/jw_muted</color>
+    <color name="status_text">@color/jw_muted_foreground</color>
+    <color name="status_success">#4ADE80</color>  <!-- green-400, dark mode -->
+    <color name="status_error">#FF6467</color>    <!-- destructive dark -->
+    <color name="push_link">@color/jw_foreground</color>
+</resources>

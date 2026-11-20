@@ -1,0 +1,35 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Lucide "file-archive": document with folded corner and a vertical
+         zipper with pull tab — the universal ZIP-file glyph. Matches the
+         stroke look of the theme icons (ic_files, ic_folder): 2dp round
+         strokes, no fill. -->
+    <!-- Document body: left edge full height, top-right corner folded in
+         a stepped diagonal down to the fold point. -->
+    <path
+        android:pathData="M4,3 C4,2.45 4.45,2 5,2 L10,2 L10,4 L12,4 L12,6 L14,6 L14,8 L16,8 L16,10 L18,10 L18,12 L19,12 C19.55,12 20,12.45 20,13 L20,21 C20,21.55 19.55,22 19,22 L5,22 C4.45,22 4,21.55 4,21 Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- Zipper teeth: short dashes down the middle of the document. -->
+    <path
+        android:pathData="M12,5 L12,7 M12,9 L12,11 M12,13 L12,15"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- Zipper pull tab below the teeth. -->
+    <path
+        android:pathData="M10.5,17.5 L13.5,17.5 L13.5,20 L10.5,20 Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Target-folder Explorer popup (v0.3.0): breadcrumb bar on top, the
+     subfolder list of the current repo folder in the middle (folders
+     only — this popup picks a destination), and a "Choose this folder"
+     action at the bottom. Loading / empty / error states are inline. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="8dp">
+
+    <!-- Navigation row: level-up button + breadcrumb trail. The up
+         affordance is always in the same place (v0.3.1) — one tap
+         returns to the parent folder; disabled at the repo root. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/browserUpBtn"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:src="@drawable/ic_arrow_up"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/browser_up_desc"
+            app:tint="?attr/colorOnSurfaceVariant" />
+
+        <!-- Breadcrumb: repo / folder / subfolder — every crumb tappable. -->
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:overScrollMode="never">
+
+            <LinearLayout
+                android:id="@+id/browserBreadcrumbs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp" />
+        </HorizontalScrollView>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/browserSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="4dp"
+        android:text="@string/browser_subtitle"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- Folder rows (RecyclerView needs a bounded height inside a
+             dialog: 320dp shows ~7 rows and keeps the dialog compact.) -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/browserList"
+            android:layout_width="match_parent"
+            android:layout_height="320dp"
+            android:clipToPadding="false"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:overScrollMode="never" />
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:id="@+id/browserLoading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/browserEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:padding="24dp"
+            android:text="@string/browser_empty_folder"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/browserError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:padding="24dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorError"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/browserChooseBtn"
+        style="@style/Widget.ZipPush.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="4dp"
+        android:text="@string/browser_choose_folder"
+        app:icon="@drawable/ic_check" />
+</LinearLayout>

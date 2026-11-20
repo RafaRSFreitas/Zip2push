@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App logo: an upward arrow leaving an open box (ZIP → GitHub push). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorPrimary">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,17 L4,20 A1,1 0 0,0 5,21 L19,21 A1,1 0 0,0 20,20 L20,17 L18,17 L18,19 L6,19 L6,17 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3 L7,8 L9.41,8 L12,5.41 L14.59,8 L17,8 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,7 L13,7 L13,16 L11,16 Z" />
+</vector>

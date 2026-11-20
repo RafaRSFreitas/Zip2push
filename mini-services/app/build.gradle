@@ -1,0 +1,78 @@
+// Module-level build file
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.zippush.app'
+    compileSdk 34
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    defaultConfig {
+        applicationId "com.zippush.app"
+        minSdk 24
+        targetSdk 34
+        versionCode 17
+        versionName "0.3.1"
+    }
+
+    signingConfigs {
+        release {
+            // Keystore generated for this project. See README for details.
+            storeFile file("../keystore/zippush-release.keystore")
+            storePassword "zippushstore"
+            keyAlias "zippush"
+            keyPassword "zippushstore"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    testOptions {
+        unitTests {
+            // Robolectric needs resource access for UI tests.
+            includeAndroidResources = true
+            all {
+                // Fetch Robolectric's android-all jars from a Maven Central
+                // mirror (Maven Central rate-limits some networks).
+                it.systemProperty 'robolectric.dependency.repo.url', 'https://repo.huaweicloud.com/repository/maven/'
+                it.systemProperty 'robolectric.dependency.repo.id', 'huaweicloud'
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity-ktx:1.9.2'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+    // ZIP64 + non-UTF-8 names + tar/tar.gz support (bug 1.6 / feature 2.8).
+    implementation 'org.apache.commons:commons-compress:1.26.2'
+
+    // Unit tests (JVM, Robolectric — no device needed)
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.13'
+    testImplementation 'androidx.test:core:1.6.1'
+    // Local HTTP server to test the full GitHub API push sequence.
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+}

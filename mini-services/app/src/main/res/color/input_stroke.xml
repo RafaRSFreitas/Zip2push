@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Input stroke state list: JornalWeb fields keep a visible border in both
+     modes (WCAG 1.4.11 non-text contrast). Focused = zinc-600/500. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/jw_input_border_focus" android:state_focused="true" />
+    <item android:color="@color/jw_input_border" />
+</selector>

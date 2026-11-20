@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Popover-style background for dropdowns and popup menus:
+     popover color + 1px border + 10dp corners (JornalWeb style). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/jw_popover" />
+    <stroke android:width="1dp" android:color="@color/jw_border" />
+    <corners android:radius="10dp" />
+</shape>

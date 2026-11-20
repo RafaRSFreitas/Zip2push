@@ -1,0 +1,401 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- ================= Scrollable content ================= -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Title row with 3-dot overflow menu -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="12dp">
+
+                <ImageView
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:src="@drawable/ic_logo"
+                    android:contentDescription="@string/app_name"
+                    android:layout_marginEnd="10dp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/app_name"
+                    android:textAppearance="?attr/textAppearanceHeadlineSmall" />
+
+                <ImageButton
+                    android:id="@+id/themeToggleBtn"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/ic_theme_moon"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/theme_toggle_desc"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+                <ImageButton
+                    android:id="@+id/overflowBtn"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/ic_more_vert"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/menu_desc"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+
+            <!-- Account card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/step1_title"
+                        android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/accountBtn"
+                        style="@style/Widget.ZipPush.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/connect_account"
+                        app:icon="@drawable/ic_account" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Upload card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- Card header: title + reload button top-right -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/step2_title"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <ImageButton
+                            android:id="@+id/reloadBtn"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_reload"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/reload_desc"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.ZipPush.TextInputLayout.ExposedDropdown"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:hint="@string/repo_hint">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/repoDropdown"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.ZipPush.TextInputLayout.ExposedDropdown"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/branch_hint">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/branchDropdown"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- v0.3.0: same ExposedDropdown look as repo / branch
+                         (equal 48dp band), but the end icon is a FOLDER
+                         button that opens the repository folder Explorer
+                         (breadcrumbs, real repo folders, new-folder
+                         action, level-up); free text is still accepted. -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/targetDirLayout"
+                        style="@style/Widget.ZipPush.TextInputLayout.ExposedDropdown"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/target_dir_hint"
+                        app:endIconMode="custom"
+                        app:endIconDrawable="@drawable/ic_folder"
+                        app:endIconContentDescription="@string/browser_title"
+                        app:helperText="@string/target_dir_helper">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/targetDirInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="text"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp" />
+                        <!-- Feature 2.4: hints from the repo's real folder
+                             tree once a repo is selected. -->
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="@string/commit_message_hint">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/commitMessageInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textMultiLine"
+                            android:minLines="2"
+                            android:gravity="top" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- Optional multi-line description body, collapsed by
+                         default (v0.2.7 behaviour). Title + blank line +
+                         body is the standard Git commit message format. -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/commitBodyLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/commit_body_hint"
+                        android:visibility="gone">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/commitBodyInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textMultiLine"
+                            android:minLines="3"
+                            android:gravity="top" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- v0.2.7 description affordances, right-aligned:
+                         "Add description" shows while the field is hidden;
+                         "Hide description" shows while the field is open
+                         AND empty (typed text is never hidden). -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="end">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/commitExpandBtn"
+                            style="@style/Widget.ZipPush.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/commit_expand_desc"
+                            android:maxLines="1" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/commitCollapseBtn"
+                            style="@style/Widget.ZipPush.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/commit_collapse_desc"
+                            android:maxLines="1"
+                            android:visibility="gone" />
+                    </LinearLayout>
+
+                    <!-- Commit date row: defaults to "Now"; tap to open the
+                         backdate picker (date + time + warning). -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/backdateBtn"
+                        style="@style/Widget.ZipPush.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:layout_gravity="end"
+                        android:maxLines="1"
+                        android:text="@string/backdate_now"
+                        app:icon="@drawable/ic_calendar_clock" />
+
+                    <!-- ZIP picker, full width on top -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/zipBtn"
+                        style="@style/Widget.ZipPush.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:maxLines="1"
+                        android:text="@string/add_zip"
+                        app:icon="@drawable/ic_zip_archive" />
+
+                    <!-- Files + Folder side by side below. Weights make them
+                         (nearly) equal; onCreatePostLayout enforces EXACT
+                         equality (LinearLayout weight rounding can be off by
+                         1px on odd-width screens). -->
+                    <LinearLayout
+                        android:id="@+id/pickerRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="4dp"
+                        android:baselineAligned="false">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/filesBtn"
+                            style="@style/Widget.ZipPush.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:maxLines="1"
+                            android:text="@string/add_files"
+                            app:icon="@drawable/ic_files"
+                            android:layout_marginEnd="4dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/folderBtn"
+                            style="@style/Widget.ZipPush.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:maxLines="1"
+                            android:text="@string/add_folder"
+                            app:icon="@drawable/ic_folder"
+                            android:layout_marginStart="4dp" />
+                    </LinearLayout>
+
+                    <!-- Selected files summary (monospace) -->
+                    <TextView
+                        android:id="@+id/selectionText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:fontFamily="@font/geist_mono_variable"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:visibility="gone" />
+
+                    <!-- Clear selection sits ABOVE Push to GitHub -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/clearBtn"
+                        style="@style/Widget.ZipPush.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/clear_selection"
+                        android:layout_marginTop="12dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/pushBtn"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/push_to_github"
+                        app:icon="@drawable/ic_push" />
+
+                    <!-- Appears after a successful push; opens the repo on GitHub. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/viewRepoBtn"
+                        style="@style/Widget.ZipPush.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/view_on_github"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_open" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/not_affiliated"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:layout_marginTop="12dp" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= Fixed status line at the BOTTOM ================= -->
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/progress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:indeterminate="true"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/statusBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/status_bg"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
+
+        <ImageView
+            android:id="@+id/statusIcon"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_info"
+            app:tint="?attr/colorOnSurfaceVariant"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="@color/status_text"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:text="@string/status_ready" />
+    </LinearLayout>
+</LinearLayout>
