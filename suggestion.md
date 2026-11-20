@@ -1,67 +1,48 @@
-# Zip2Push — v0.3.3 (History no menu + hint do campo de pasta simplificado)
+# Zip2Push — v0.3.4 (botão File + suporte a tar e RAR)
 
-> **Pedidos atendidos:** (1) o hint do campo de pasta agora diz apenas **"Target folder (optional)"**; (2) novo item **History** no menu de 3 pontos, mostrando os pushes concluídos de forma limpa e organizada, com detalhes e link para ver as mudanças no GitHub; (3) **22 testes novos** cobrindo o History de ponta a ponta. Suíte completa: **154 testes, 0 falhas**.
+> **Pedidos atendidos:** (1) o botão de adicionar arquivo agora se chama **"File"**; (2) o mesmo botão aceita **tar**, **tar.gz** e **RAR** (RAR4 e RAR5+) além do ZIP — um único botão para todos os formatos de archive. **23 testes novos** com archives RAR reais; suíte completa: **170 testes, 0 falhas**. A bateria ainda achou e corrigiu um **bug real** que fazia archives "flat" (sem pastas) submeterem **zero arquivos**.
 
-## 1. Hint simplificado
+## 1. Botão renomeado
 
-`target_dir_hint` era "Target folder in the repo (optional)" → agora **"Target folder (optional)"**, como pedido. O texto de ajuda abaixo do campo (helper) continua explicando o comportamento.
+"Add ZIP archive" → **"File"**. O mesmo botão, o mesmo fluxo — só o nome e os formatos mudaram.
 
-## 2. History — o que mostra e por quê
+## 2. tar e RAR no mesmo botão
 
-A composição das linhas segue as duas referências pesquisadas:
+### O que o botão File aceita agora
 
-- **git log** (https://git-scm.com/book/en/v2/Git-Basics-Viewing-the-Commit-History): assunto, autor, data relativa, SHA abreviado, e os arquivos com seus nomes;
-- **GitHub Activity View** (https://docs.github.com/en/repositories/viewing-activity-and-data-for-your-repository/using-the-activity-view-to-see-changes-to-a-repository): quem, quando, branch e o affordance "Compare changes" (ver as mudanças exatas de cada evento).
-
-### A lista (mais recente primeiro)
-
-Cada linha mostra:
-
-| Elemento | Exemplo | Origem da referência |
+| Formato | Detecção | Backend |
 |---|---|---|
-| Ícone de status | ✓ verde / ⚠ vermelho | GitHub Activity |
-| Assunto (título do commit) | `Upload week 3` | git log `%s` |
-| Data relativa | `2h ago` | git log `%ar` ("most scannable") |
-| Repo · branch · pasta | `alice/repo · main · assignments` | GitHub Activity |
-| Autor · arquivos · tamanho · SHA | `by alice · 3 files · 24 kB · a1b2c3d` | git log + Activity |
+| ZIP (incl. ZIP64) | magic `PK\x03\x04` | Commons Compress (já usado) |
+| tar | magic `ustar` no header | Commons Compress (já usado) |
+| tar.gz / tgz | magic `1f 8b` (gzip) | Commons Compress (já usado) |
+| **RAR 4** | magic `Rar!\x1a\x07\x00` | **junrar 8.1.2** (novo) |
+| **RAR 5 e até v7** | magic `Rar!\x1a\x07\x01\x00` | **junrar 8.1.2** (novo) |
 
-### O detalhe (tocar numa linha expande)
+A escolha da biblioteca veio de pesquisa: **junrar** ([github.com/junrar/junrar](https://github.com/junrar/junrar)) é Java puro (sem código nativo), suporta "RAR up to v7" incluindo arquivos com senha, está no Maven Central (v8.1.2), pesa 248 KB e tem uma única dependência transitiva (slf4j-api).
 
-- **Files in this push** — os paths de repo que o push carregou (git log `--name-only`); acima de 8 arquivos, mostra os 8 primeiros + "Show all 20 files";
-- **See changes on GitHub** — abre o commit no browser (o "Compare changes" da Activity View); em falhas, mostra o motivo (ex.: `Tree: HTTP 403`) em vez do link;
-- Tocar de novo recolhe; apenas uma linha fica expandida por vez.
+### Segurança em primeiro lugar
 
-### Outros comportamentos
+- A detecção é sempre por **magic bytes**, nunca por extensão ou MIME type (provedores mentem: um .rar chega como `application/octet-stream`);
+- No ato da seleção, um arquivo que não é archive é **recusado com um toast claro** ("That file is not a ZIP, tar or RAR archive") — nada de falhar no meio do push;
+- Nomes de entrada RAR usam `\` (separador Windows) — normalizados antes do saneamento;
+- Paths hostis (`../..`, `C:\`, absolutos) seguem pelo mesmo `PathSanitizer` de sempre: ou viram um path seguro dentro do repo, ou a entrada é pulada. Uma entrada corrompida/hostil **não derruba o push inteiro** (só ela é ignorada);
+- O resumo da seleção agora mostra o formato detectado: `Archive (RAR): fotos.rar`, `Archive (tar.gz): bundle.tgz`.
 
-- **Falhas também entram no histórico** (com ícone ⚠ e motivo) — o usuário quer saber o que deu errado, não só o que deu certo;
-- **Clear history** (botão neutro) com diálogo de confirmação que deixa claro que só a lista local é apagada — nada no GitHub é afetado;
-- **Estado vazio** amigável ("No pushes yet…") quando não há histórico;
-- **Persistência local** (JSON no storage privado, cap de 100 entradas, escrita atômica temp+rename, arquivo corrompido degrada para lista vazia sem crash);
-- **Cap de arquivos por entrada**: sem limite — o detalhe trunca a exibição em 8, mas guarda todos.
+### Bug real encontrado pela bateria de testes
 
-## 3. Implementação
+O `skipRootFolder` antigo transformava paths sem `/` (arquivos na raiz do archive) em **string vazia** — ou seja, um ZIP/RAR "flat" (só arquivos, sem pasta) empurrava **0 arquivos** para o GitHub. Corrigido: arquivos de nível raiz são mantidos como estão; a regra de remover a pasta raiz vale só quando há uma pasta para remover. Isso valia para ZIP e tar também — o bug existia desde antes do RAR.
 
-| Arquivo | Papel |
-|---|---|
-| `history/PushHistoryStore.kt` | `HistoryEntry` (modelo + JSON) e o store persistente |
-| `history/PushHistoryDialog.kt` | dialog com RecyclerView, expand/collapse, link clicável, Clear com confirmação, datas relativas e bytes formatados |
-| `push/PushRunner.kt` | grava a entrada ao push terminar (sucesso **e** falha), com os paths resolvidos durante o upload |
-| `MainActivity` | menu 3 pontos: **History** (novo, primeiro item), About, Donations |
+## 3. Testes (23 novos, todos verdes)
 
-A gravação é **best-effort** (um erro de I/O no histórico nunca falha o push em si) e captura os metadados no próprio `PushRunner` (app-scoped), então funciona igual com ou sem a activity viva (rotação, processo em background).
+Como não existe gerador de RAR em Java puro, os testes usam **archives RAR reais** do corpus de testes do próprio junrar (repo Apache-2.0): `rar4.rar`, `rar5.rar`, `unicode.rar`, `test.rar` e três archives hostis (`mkdir-escape`, `parent-dir`, `sibling-prefix-traversal`).
 
-## 4. Testes (22 novos, todos verdes)
+**ArchiveReaderTest (12 novos)**: detecção RAR4/RAR5 (file e stream); extração RAR4 com nomes e bytes exatos (`FILE1.TXT` = "file1"); extração RAR5 idem; nomes unicode (japonês/chinês) intactos; os três archives de traversal neutralizados (nenhum path com `..`, `\`, `:` ou absoluto); `skipRootFolder` aplica ao RAR (`foo\bar.txt` → `bar.txt`); RAR com magic válido e corpo corrompido falha como exceção limpa.
 
-**PushHistoryStoreTest (9)** — round trip JSON com todos os campos; ordenação mais-novo-primeiro; entradas de falha (sem SHA, com motivo); cap de 100 mantendo as mais novas; `shortSha()` de 7 chars (git style); clear; arquivo corrompido → lista vazia sem crash; unicode/emoji no round trip; campos opcionais ausentes no parse.
+**FileButtonArchiveTest (11 novos)**: botão labelizado "File"; não-archive recusado com toast correto e nada selecionado; RAR5 aceito e resumido como "Archive (RAR)"; tar.gz aceito e resumido como "Archive (tar.gz)"; **push ponta-a-ponta com RAR5** (MockWebServer → 2 arquivos no commit → History registra `FILE1.TXT`, `FILE2.TXT`); **push ponta-a-ponta com tar.gz** (entry `docs/readme.txt` → repo path `readme.txt`); ZIP truncado falha o push com motivo legível.
 
-**PushHistoryDialogTest (9)** — buckets de data relativa (now/m/h/d/mo); formatação de bytes (B/kB/MB); estado vazio; linha completa (repo · branch · pasta, autor, arquivos, SHA, tempo); plurais (1 file / 3 files); expand/recolhe com lista de arquivos + link "See changes"; falha mostra motivo no expand; truncamento de muitos arquivos (+ "Show all"); pasta raiz vira "repository root".
+## 4. Notas
 
-**PushHistoryIntegrationTest (4)** — push de sucesso via MockWebServer gera entrada completa (repo, branch, pasta, título, autor, SHA, URL do commit, paths reais do ZIP com root folder stripped, bytes); push com erro 500 é gravado como falha com o motivo; dois pushes = duas entradas, mais nova primeiro; menu abre o History.
-
-Bugs encontrados e corrigidos pela própria bateria: data relativa esperava granularidade errada em um bucket (corrigido antes de rodar — segui as convenções do git log); o teste de falha inicialmente usava um servidor que respondia sucesso em tudo (o push não falhava) — reescrito com endpoints 500 reais.
-
-## Notas
-
-- **versionCode 19, versionName 0.3.3** — instala por cima da 0.3.2 (mesma chave).
-- Sem dependências novas: RecyclerView (já presente), JSON org (plataforma), dialogs Material (já presentes).
-- O histórico é por dispositivo/app (não sincroniza — é um log local do que foi feito nele).
+- **versionCode 20, versionName 0.3.4** — instala por cima da 0.3.2/0.3.3 (mesma chave).
+- Dependência nova: `com.github.junrar:junrar:8.1.2` (Maven Central, Java puro, 248 KB + slf4j-api).
+- Toasts e textos da UI atualizados: "Pick an archive (ZIP/tar/RAR) or some files first"; o About menciona os três formatos.
+- Limitação herdada da biblioteca: RAR **com senha** não é suportado (o push falha com motivo claro — junrar até decifra, mas exigir senha do usuário está fora deste escopo); RAR **multi-volume** (partes .rar/.r00) também não.

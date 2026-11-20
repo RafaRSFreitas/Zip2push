@@ -31,6 +31,7 @@ import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.zippush.app.browser.FolderBrowser
+import com.zippush.app.engine.ArchiveReader
 import com.zippush.app.engine.UploadEngine
 import com.zippush.app.history.PushHistoryDialog
 import com.zippush.app.net.GitHubClient
@@ -74,6 +75,21 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_HISTORY = 102
         private const val PREF_THEME_MODE = "theme_mode"
         private const val STATE_BACKDATE_EPOCH = "backdate_epoch_ms"
+
+        /**
+         * v0.3.4: MIME types the "File" picker offers — every archive
+         * format the app can extract. The list is only a provider-side
+         * filter; the real validation happens on the picked bytes
+         * (see [onArchivePicked]).
+         */
+        private val ARCHIVE_MIME_TYPES = arrayOf(
+            "application/zip", "application/x-zip-compressed",
+            "application/x-compressed",
+            "application/x-tar", "application/tar",
+            "application/x-gtar", "application/x-gzip", "application/gzip",
+            "application/x-rar-compressed", "application/vnd.rar", "application/rar",
+            "application/octet-stream"
+        )
     }
 
     // ------------------------------------------------------------------ views
@@ -311,7 +327,7 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------- activity results
     private val pickZip = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { tracker.pickZip(it); refreshSelectionSummary() }
+        if (uri != null) onArchivePicked(uri)
     }
     private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         tracker.pickFiles(uris)
@@ -420,8 +436,13 @@ class MainActivity : AppCompatActivity() {
         targetDirLayout.setEndIconOnClickListener { openFolderBrowser() }
 
         zipBtn.setOnClickListener {
+            // v0.3.4: one "File" button for every archive format —
+            // ZIP, tar, tar.gz and RAR. The picker filters by the MIME
+            // types providers usually report; providers that report
+            // something odd fall back to showing all files (the format
+            // is validated by magic bytes at pick time anyway).
             try {
-                pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                pickZip.launch(ARCHIVE_MIME_TYPES)
             } catch (e: Exception) {
                 pickZip.launch(arrayOf("*/*"))
             }
@@ -728,6 +749,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------- folder walk
+
+    /**
+     * v0.3.4: an archive picked with the "File" button. The format is
+     * verified by MAGIC BYTES (providers lie about MIME types — a .rar
+     * often arrives as application/octet-stream), so a wrong file is
+     * rejected here with a clear toast instead of failing mid-push.
+     */
+    private fun onArchivePicked(uri: Uri) {
+        val format = runCatching {
+            contentResolver.openInputStream(uri)?.use { ArchiveReader.detectFormat(it) }
+        }.getOrNull() ?: ArchiveReader.Format.UNKNOWN
+        if (format == ArchiveReader.Format.UNKNOWN) {
+            tracker.pickZip(null)
+            pickedArchiveFormat = null
+            refreshSelectionSummary()
+            Toast.makeText(this, getString(R.string.toast_unsupported_archive), Toast.LENGTH_SHORT).show()
+            return
+        }
+        tracker.pickZip(uri)
+        pickedArchiveFormat = format
+        refreshSelectionSummary()
+    }
+
+    /**
+     * The format of the currently picked archive (detected at pick
+     * time, v0.3.4) — spares the summary a second stream open.
+     */
+    private var pickedArchiveFormat: ArchiveReader.Format? = null
+
+    /** Test hook: runs the File-button pick path for [uri]. */
+    internal fun onArchivePickedForTest(uri: Uri) {
+        onArchivePicked(uri)
+    }
 
     /**
      * Walks the picked document tree recursively and turns every regular
@@ -1358,7 +1412,22 @@ class MainActivity : AppCompatActivity() {
         refreshTargetDirSuggestions()
         selectionText.visibility = if (zip == null && files.isEmpty()) View.GONE else View.VISIBLE
         selectionText.text = buildString {
-            zip?.let { appendLine("ZIP: ${queryDisplayName(it) ?: "archive.zip"}") }
+            zip?.let {
+                // v0.3.4: any archive format may sit here (ZIP/tar/RAR),
+                // so the label names what was detected at pick time.
+                val label = when (pickedArchiveFormat) {
+                    ArchiveReader.Format.TAR_GZ -> "tar.gz"
+                    ArchiveReader.Format.RAR4, ArchiveReader.Format.RAR5 -> "RAR"
+                    ArchiveReader.Format.ZIP -> "zip"
+                    ArchiveReader.Format.TAR -> "tar"
+                    null -> null
+                    ArchiveReader.Format.UNKNOWN -> null
+                }
+                val name = queryDisplayName(it) ?: "archive"
+                appendLine(
+                    if (label != null) "Archive ($label): $name" else "Archive: $name"
+                )
+            }
             if (files.isNotEmpty()) {
                 appendLine("Files: ${files.size}")
                 files.take(4).forEach { appendLine("  ${it.repoPath}") }
@@ -1534,6 +1603,7 @@ class MainActivity : AppCompatActivity() {
                 viewRepoBtn.visibility == View.VISIBLE
 
         tracker.clear()
+        pickedArchiveFormat = null
         selectedRepo = null
         selectedBranch = null
         repoDropdown.setText("", false)
@@ -1777,6 +1847,7 @@ class MainActivity : AppCompatActivity() {
                             // upload. The repo / branch selection stays (users
                             // usually push again to the same place).
                             tracker.clear()
+                            pickedArchiveFormat = null
                             commitMessageInput.setText("")
                             setDescriptionExpanded(false)
                             resetBackdate()

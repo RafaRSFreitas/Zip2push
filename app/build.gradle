@@ -16,8 +16,8 @@ android {
         applicationId "com.zippush.app"
         minSdk 24
         targetSdk 34
-        versionCode 19
-        versionName "0.3.3"
+        versionCode 20
+        versionName "0.3.4"
     }
 
     signingConfigs {
@@ -68,6 +68,9 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     // ZIP64 + non-UTF-8 names + tar/tar.gz support (bug 1.6 / feature 2.8).
     implementation 'org.apache.commons:commons-compress:1.26.2'
+    // RAR (RAR4 + RAR5..v7) extraction (feature 3.1). Pure Java, no
+    // native code; single transitive dep is slf4j-api.
+    implementation 'com.github.junrar:junrar:8.1.2'
 
     // Unit tests (JVM, Robolectric — no device needed)
     testImplementation 'junit:junit:4.13.2'

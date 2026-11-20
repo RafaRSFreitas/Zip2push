@@ -144,4 +144,105 @@ class ArchiveReaderTest {
         assertEquals(listOf("hello.txt"), out.map { it.path })
         assertEquals("hi", String(out[0].bytes))
     }
+
+    // ------------------------------------------------------------- RAR (3.1)
+    // Real archives from the junrar test corpus (Apache-2.0 repo,
+    // https://github.com/junrar/junrar): no pure-Java RAR writer exists,
+    // so extraction is verified against genuine RAR4/RAR5 bytes.
+
+    private fun fixture(name: String): File =
+        java.io.File(
+            javaClass.classLoader.getResource("archives/$name")!!.toURI()
+        )
+
+    @Test
+    fun `rar4 magic bytes detect as RAR4`() {
+        assertEquals(ArchiveReader.Format.RAR4, ArchiveReader.detectFormat(fixture("rar4.rar")))
+    }
+
+    @Test
+    fun `rar5 magic bytes detect as RAR5`() {
+        assertEquals(ArchiveReader.Format.RAR5, ArchiveReader.detectFormat(fixture("rar5.rar")))
+    }
+
+    @Test
+    fun `rar4 entries extract with contents`() {
+        // junrar's own corpus: rar4.rar carries FILE1.TXT and FILE2.TXT
+        // ("file1\n" / "file2\n") — verify names AND bytes exactly.
+        val out = ArchiveReader.extract(fixture("rar4.rar"), skipRootFolder = false)
+        assertEquals(listOf("FILE1.TXT", "FILE2.TXT"), out.map { it.path })
+        assertEquals("file1", String(out[0].bytes).trim())
+        assertEquals("file2", String(out[1].bytes).trim())
+    }
+
+    @Test
+    fun `rar5 entries extract with contents`() {
+        // Same corpus in RAR5 format — both generations must work.
+        val out = ArchiveReader.extract(fixture("rar5.rar"), skipRootFolder = false)
+        assertEquals(listOf("FILE1.TXT", "FILE2.TXT"), out.map { it.path })
+        assertEquals("file1", String(out[0].bytes).trim())
+        assertEquals("file2", String(out[1].bytes).trim())
+    }
+
+    @Test
+    fun `rar traversal entries are neutralized`() {
+        // Three crafted archives from the junrar corpus with hostile
+        // entry paths. Whatever comes out must NEVER contain a
+        // traversal (".."), an absolute path, or a Windows drive —
+        // hostile entries either sanitize to something safe inside the
+        // repo or are skipped entirely (their headers are also broken).
+        listOf("mkdir-escape.rar", "parent-dir.rar", "sibling-prefix-traversal.rar")
+            .forEach { name ->
+                val out = ArchiveReader.extract(fixture(name), skipRootFolder = false)
+                out.forEach { e ->
+                    assertTrue("$name: no traversal: ${e.path}", !e.path.contains(".."))
+                    assertTrue("$name: relative: ${e.path}", !e.path.startsWith("/"))
+                    assertTrue("$name: no drive: ${e.path}", !e.path.contains(':'))
+                    assertTrue("$name: no backslash: ${e.path}", !e.path.contains('\\'))
+                }
+            }
+    }
+
+    @Test
+    fun `rar4 with unicode names extracts`() {
+        // unicode.rar carries Japanese and Chinese entry names with
+        // matching contents — names must survive intact.
+        val out = ArchiveReader.extract(fixture("unicode.rar"), skipRootFolder = false)
+        assertEquals(2, out.size)
+        val paths = out.map { it.path }
+        assertTrue(paths.contains("ウニコド.txt"))
+        assertTrue(paths.contains("新建文本文档.txt"))
+        val uni = out.first { it.path == "ウニコド.txt" }
+        assertEquals("このファイルにはUnicodeテキストが含まれています", String(uni.bytes))
+    }
+
+    @Test
+    fun `corrupt rar fails as exception not crash`() {
+        // RAR magic followed by garbage: detection says RAR4 but the
+        // body cannot be parsed — must surface as an exception, not
+        // corrupt data or an infinite loop.
+        val f = tempFile("corrupt")
+        f.writeBytes(
+            byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00) +
+                "garbage that is not a rar body".toByteArray()
+        )
+        assertEquals(ArchiveReader.Format.RAR4, ArchiveReader.detectFormat(f))
+        val ex = runCatching { ArchiveReader.extract(f, skipRootFolder = false) }.exceptionOrNull()
+        assertTrue(ex is Exception)
+    }
+
+    @Test
+    fun `rar4 detection works on a stream`() {
+        java.io.FileInputStream(fixture("rar4.rar")).use { s ->
+            assertEquals(ArchiveReader.Format.RAR4, ArchiveReader.detectFormat(s))
+        }
+    }
+
+    @Test
+    fun `skipRootFolder applies to rar too`() {
+        // test.rar (junrar corpus): entry "foo\bar.txt" under dir "foo".
+        // With skipRootFolder, the root folder is dropped: "bar.txt".
+        val out = ArchiveReader.extract(fixture("test.rar"), skipRootFolder = true)
+        assertEquals(listOf("bar.txt"), out.map { it.path })
+    }
 }

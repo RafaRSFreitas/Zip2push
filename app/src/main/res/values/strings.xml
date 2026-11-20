@@ -46,9 +46,10 @@
     <string name="backdate_cancel">Cancel</string>
     <string name="backdate_applied_status">Commit date set to %1$s — the commit will look out of order in history.</string>
     <string name="backdate_cleared_status">Commit date reset to now.</string>
-    <string name="add_zip">Add ZIP archive</string>
+    <string name="add_zip">File</string>
     <string name="add_files">Add individual files</string>
     <string name="add_folder">Add folder</string>
+    <string name="toast_unsupported_archive">That file is not a ZIP, tar or RAR archive</string>
     <string name="folder_picked_summary">%1$d files from folder “%2$s”</string>
     <string name="folder_empty">No files found in the selected folder.</string>
     <string name="clear_selection">Clear selection</string>
@@ -57,13 +58,13 @@
     <!-- v0.2.9: short toast variants (tap-level feedback never touches the status bar) -->
     <string name="toast_push_in_progress">Push already in progress…</string>
     <string name="toast_pick_repo">Pick a repository first</string>
-    <string name="toast_pick_files">Pick files or a ZIP first</string>
+    <string name="toast_pick_files">Pick an archive (ZIP/tar/RAR) or some files first</string>
     <!-- v0.2.8 foreground service: silent, low-importance, no prompt. -->
     <string name="push_notif_channel">Push in progress</string>
     <string name="push_notif_channel_desc">Shows while a push is uploading, so it keeps running when you leave the app.</string>
     <string name="push_notif_active">Pushing to GitHub…</string>
     <string name="pick_repo_first">Select a repository first</string>
-    <string name="pick_files_first">Pick a ZIP or some files first</string>
+    <string name="pick_files_first">Pick an archive (ZIP/tar/RAR) or some files first</string>
     <string name="no_readable_files">No readable files found in the selection.</string>
     <string name="token_error">Token rejected: %1$s</string>
     <string name="connected_as">Connected as %1$s ✓ — loading repositories…</string>
@@ -95,7 +96,7 @@
     <string name="about_title">About Zip2Push</string>
     <string name="about_version_label">Version</string>
     <string name="about_version_format">Version %1$s</string>
-    <string name="about_body">Zip2Push pushes ZIP archives, files and folders to any GitHub repository straight from your phone — no PC, no Git commands. Pick what to upload, choose a repo and branch, and it lands as one clean commit.</string>
+    <string name="about_body">Zip2Push pushes ZIP, tar and RAR archives, files and folders to any GitHub repository straight from your phone — no PC, no Git commands. Pick what to upload, choose a repo and branch, and it lands as one clean commit.</string>
     <string name="about_privacy_title">Privacy</string>
     <string name="about_privacy_body">Your Personal Access Token is stored encrypted on this device only and is sent exclusively to GitHub\'s own API. Nothing else is collected, tracked or shared.</string>
     <string name="about_oss_title">Open source</string>
