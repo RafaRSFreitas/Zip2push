@@ -280,6 +280,12 @@ class MainActivity : AppCompatActivity() {
     /** Last pushed commit URL, used by the "View on GitHub" button. */
     internal var lastCommitUrl: String? = null
 
+    /**
+     * Target folder of the push currently in flight (captured at tap
+     * time; remembered in the session state when it succeeds).
+     */
+    private var pushedTargetDir: String = ""
+
     // Adapter model for the branch dropdown: a real branch or the
     // trailing "create new branch" action row.
     private sealed class BranchItem {
@@ -440,7 +446,7 @@ class MainActivity : AppCompatActivity() {
         // Auto-connect to the active or pending account on launch.
         val token = vault.loadToken()
         if (token != null) {
-            connectWithToken(token)
+            connectWithToken(token, auto = true)
         } else {
             updateAccountButton()
             setStatus(getString(R.string.status_ready), StatusKind.INFO)
@@ -491,9 +497,58 @@ class MainActivity : AppCompatActivity() {
 
     private enum class StatusKind { INFO, PROGRESS, SUCCESS, ERROR }
 
-    /** Shows [message] on the fixed bottom status line. Always visible. */
+    /**
+     * A finished push's result that the bar must KEEP showing until the
+     * user starts something new (v0.2.9): after a rotation the
+     * auto-connect used to overwrite "Pushed ✓…" with "Verifying
+     * token…" / "Connected as…", hiding the outcome the user cares
+     * about. Cleared by user-initiated actions (push, connect, reload,
+     * clear) — those are allowed to own the bar again.
+     */
+    @Volatile
+    private var holdDoneResult: PushRunner.State.Done? = null
+
+    /**
+     * True while a background network flow from THIS activity (connect,
+     * repos, branches…) is between setBusy(true) and setBusy(false).
+     * The visible spinner is the OR of this and the app-scoped push, so
+     * a repo refresh finishing mid-push can no longer hide the push's
+     * spinner — the "loading stopped" illusion after rotation (v0.2.9).
+     */
+    @Volatile
+    private var netBusy = false
+
+
+    /**
+     * Single writer of the spinner and the button locks: visible when
+     * this activity's network work OR the app-scoped push is running.
+     * Every setBusy call funnels here, so nothing can bypass the OR.
+     */
+    private fun applyBusy() {
+        if (!alive) return
+        val busy = netBusy || PushRunner.isBusy()
+        progress.visibility = if (busy) View.VISIBLE else View.GONE
+        pushBtn.isEnabled = !busy
+        zipBtn.isEnabled = !busy
+        filesBtn.isEnabled = !busy
+        folderBtn.isEnabled = !busy
+        clearBtn.isEnabled = !busy
+        accountBtn.isEnabled = !busy
+    }
+
+    /**
+     * Shows [message] on the fixed bottom status line. Always visible.
+     *
+     * While a push is in flight the push owns the bar (its description
+     * says what is happening); a background refresh landing mid-push
+     * ("Connected as…", "Loaded branches…") used to overwrite it right
+     * after a rotation and made the push look stopped. Those messages
+     * are dropped instead — the push is the more important information.
+     */
     private fun setStatus(message: String, kind: StatusKind = StatusKind.INFO) {
         if (!alive) return
+        if (PushRunner.isBusy()) return
+        if (holdDoneResult != null) return
         statusText.text = message
         val (iconRes, tintRes) = when (kind) {
             StatusKind.INFO -> R.drawable.ic_info to R.color.status_text
@@ -505,6 +560,15 @@ class MainActivity : AppCompatActivity() {
         statusIcon.imageTintList =
             ColorStateList.valueOf(ContextCompat.getColor(this, tintRes))
     }
+
+    /** Test hook: the current status line text. */
+    internal fun statusTextForTest(): String = statusText.text.toString()
+
+    /** Test hook: whether the Push button is enabled. */
+    internal fun pushBtnEnabledForTest(): Boolean = pushBtn.isEnabled
+
+    /** Test hook: whether the progress spinner is visible. */
+    internal fun isSpinnerVisibleForTest(): Boolean = progress.visibility == View.VISIBLE
 
     /**
      * Clamps the Files / Folder buttons to identical width/height and
@@ -799,6 +863,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Connects with the given login's stored token. */
     private fun switchAccount(login: String) {
+        holdDoneResult = null
         val token = vault.loadAccountToken(login) ?: run {
             setStatus(getString(R.string.token_error, "stored token unreadable"), StatusKind.ERROR)
             return
@@ -838,7 +903,16 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ logic
 
-    private fun connectWithToken(token: String, reopenDialogOnFailure: Boolean = false) {
+    private fun connectWithToken(
+        token: String,
+        reopenDialogOnFailure: Boolean = false,
+        auto: Boolean = false
+    ) {
+        // An AUTO-connect (activity recreation) must not clear the held
+        // push result off the status bar: after a rotation the user still
+        // needs to see "Pushed ✓ …". User-initiated connects clear it —
+        // the user just started a new, more important flow (v0.2.9).
+        if (!auto) holdDoneResult = null
         setBusy(true)
         setStatus("Verifying token…", StatusKind.PROGRESS)
         scope.launch {
@@ -1199,6 +1273,7 @@ class MainActivity : AppCompatActivity() {
         if (!alive) return
         val zip = tracker.zip
         val files = tracker.filesWithPaths
+        refreshTargetDirSuggestions()
         selectionText.visibility = if (zip == null && files.isEmpty()) View.GONE else View.VISIBLE
         selectionText.text = buildString {
             zip?.let { appendLine("ZIP: ${queryDisplayName(it) ?: "archive.zip"}") }
@@ -1213,11 +1288,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Rebuilds the target-folder suggestion list (v0.2.9). Offline and
+     * local: the parent folders of the currently picked files (the user
+     * just told us where their content lives) plus folders used by
+     * earlier pushes this session, most recent first. The chevron on
+     * the field opens this list — that is what makes it a real affordance
+     * instead of a dead icon keeping the box tall.
+     */
+    private fun refreshTargetDirSuggestions() {
+        if (!alive) return
+        val fromSelection = tracker.filesWithPaths
+            .map { it.repoPath.substringBeforeLast('/', "") }
+            .filter { it.isNotBlank() }
+            .distinct()
+        val hints = (fromSelection + SessionState.recentTargetDirs).distinct().take(6)
+        if (hints.isEmpty()) {
+            targetDirInput.setAdapter(null)
+            return
+        }
+        targetDirInput.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_list_item_1, hints)
+        )
+    }
+
+    /** Test hook: the current target-folder suggestions. */
+    internal fun targetDirSuggestionsForTest(): List<String> {
+        val ad = targetDirInput.adapter as? ArrayAdapter<*>
+        return (0 until (ad?.count ?: 0)).map { ad?.getItem(it)?.toString() ?: "" }
+    }
+
+    /**
      * Clear Selection: resets the whole form — picked files, repository,
      * branch, target folder, commit message and the View-on-GitHub button —
      * and confirms on the status line. Says so when there was nothing to do.
      */
     private fun onClearClicked() {
+        holdDoneResult = null
         val hadFiles = tracker.hasSelection()
         val hadAnything = hadFiles || selectedRepo != null ||
                 !targetDirInput.text.isNullOrBlank() ||
@@ -1256,6 +1362,7 @@ class MainActivity : AppCompatActivity() {
      * and the user is told why.
      */
     private fun onReloadClicked() {
+        holdDoneResult = null
         if (client == null) {
             setStatus(getString(R.string.reload_not_connected), StatusKind.INFO)
             return
@@ -1407,34 +1514,59 @@ class MainActivity : AppCompatActivity() {
         if (!alive || isFinishing) return
         when (st) {
             is PushRunner.State.Running -> {
-                setBusy(true)
-                setStatus(st.job.description, StatusKind.PROGRESS)
+                applyBusy()
+                holdDoneResult = null
+                statusText.text = st.job.description
+                statusIcon.setImageResource(R.drawable.ic_info)
+                statusIcon.imageTintList =
+                    ColorStateList.valueOf(ContextCompat.getColor(this, R.color.status_text))
             }
             is PushRunner.State.Done -> {
-                setBusy(false)
-                when (val result = st.result) {
+                applyBusy()
+                holdDoneResult = st
+                // The status line is re-rendered by every instance (a
+                // recreated screen needs the context), but the
+                // presentation EFFECTS — toast, form clear, folder memory
+                // — happen exactly once GLOBALLY per result: re-attaching
+                // after a rotation must not replay the "Pushed ✓" toast
+                // nor re-clear a form the user may have started filling
+                // for the next push (v0.2.9).
+                val result = st.result
+                when (result) {
                     is UploadEngine.PushResult.Success -> {
-                        setStatus(
-                            getString(R.string.push_success, result.filesPushed, result.commitUrl),
-                            StatusKind.SUCCESS
+                        statusText.text = getString(
+                            R.string.push_success, result.filesPushed, result.commitUrl
+                        )
+                        statusIcon.setImageResource(R.drawable.ic_success)
+                        statusIcon.imageTintList = ColorStateList.valueOf(
+                            ContextCompat.getColor(this, R.color.status_success)
                         )
                         lastCommitUrl = result.commitUrl
                         viewRepoBtn.visibility = View.VISIBLE
-                        Toast.makeText(this, "Pushed ✓", Toast.LENGTH_SHORT).show()
-                        // Clear the picked files, the commit message AND the
-                        // backdate so the user starts fresh with the next
-                        // upload. The repo / branch selection stays (users
-                        // usually push again to the same place).
-                        tracker.clear()
-                        commitMessageInput.setText("")
-                        setDescriptionExpanded(false)
-                        resetBackdate()
-                        refreshSelectionSummary()
+                        if (!PushRunner.wasPresented(result)) {
+                            PushRunner.markPresented(result)
+                            Toast.makeText(this, "Pushed ✓", Toast.LENGTH_SHORT).show()
+                            // The folder just pushed to becomes the top
+                            // suggestion for the next push (session-scoped).
+                            SessionState.rememberTargetDir(pushedTargetDir)
+                            // Clear the picked files, the commit message AND the
+                            // backdate so the user starts fresh with the next
+                            // upload. The repo / branch selection stays (users
+                            // usually push again to the same place).
+                            tracker.clear()
+                            commitMessageInput.setText("")
+                            setDescriptionExpanded(false)
+                            resetBackdate()
+                            refreshSelectionSummary()
+                        }
                     }
                     is UploadEngine.PushResult.Failure -> {
-                        setStatus(
-                            getString(R.string.push_failed, result.stage, result.message),
-                            StatusKind.ERROR
+                        statusText.text = getString(
+                            R.string.push_failed, result.stage, result.message
+                        )
+                        statusIcon.setImageResource(R.drawable.ic_warning)
+                        statusIcon.imageTintList = ColorStateList.valueOf(
+                            ContextCompat.getColor(this, R.color.status_error)
                         )
                     }
                 }
@@ -1447,8 +1579,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onPushClicked() {
+        holdDoneResult = null
+        // Tap-level feedback is a short-lived pop-up, not the status bar
+        // (v0.2.9): the bar must stay reserved for the actual push /
+        // connection state so it never shows contradictory information.
         if (PushRunner.isBusy()) {
-            setStatus(getString(R.string.push_in_progress), StatusKind.PROGRESS)
+            Toast.makeText(this, getString(R.string.toast_push_in_progress), Toast.LENGTH_SHORT).show()
             return
         }
         val repo = selectedRepo
@@ -1462,14 +1598,14 @@ class MainActivity : AppCompatActivity() {
         val msg = if (body.isBlank()) title else "$title\n\n$body"
 
         if (repo == null) {
-            setStatus(getString(R.string.pick_repo_first), StatusKind.ERROR)
+            Toast.makeText(this, getString(R.string.toast_pick_repo), Toast.LENGTH_SHORT).show()
             return
         }
         // Snapshot immediately: clearing / re-picking afterwards must not
         // affect the in-flight push.
         val selection = tracker.snapshot()
         if (selection.isEmpty) {
-            setStatus(getString(R.string.pick_files_first), StatusKind.ERROR)
+            Toast.makeText(this, getString(R.string.toast_pick_files), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1479,6 +1615,11 @@ class MainActivity : AppCompatActivity() {
         // the login for the author fields.
         val authorIso = backdateIso()
         val authorLogin = vault.activeLogin()
+
+        // Remembered when THIS push succeeds (feeds the folder
+        // suggestions; captured here because the field may be edited
+        // or cleared while the push is in flight).
+        pushedTargetDir = targetDir
 
         // Hand over to the app-scoped runner: the push survives rotation
         // and the recreated activity re-attaches to show the result
@@ -1495,9 +1636,13 @@ class MainActivity : AppCompatActivity() {
             authorLogin = authorLogin
         )
         if (!started) {
-            setStatus(getString(R.string.push_in_progress), StatusKind.PROGRESS)
+            Toast.makeText(this, getString(R.string.toast_push_in_progress), Toast.LENGTH_SHORT).show()
             return
         }
+        // The push owns the bar from this instant (the observer re-renders
+        // it too, but not before the next looper tick — the bar must never
+        // linger on the pre-push message, e.g. "Loaded N repositories…").
+        renderPushState(PushRunner.state)
         // Keep the process alive while the upload runs (only legal while
         // the UI is started — see startPushServiceIfAllowed).
         startPushServiceIfAllowed()
@@ -1520,14 +1665,14 @@ class MainActivity : AppCompatActivity() {
         null
     }
 
+    /**
+     * Marks THIS activity's network work. The visible spinner is the OR
+     * of this and the app-scoped push (see [applyBusy]) — a flow calling
+     * setBusy(false) when it finishes can no longer hide a running
+     * push's spinner.
+     */
     private fun setBusy(busy: Boolean) {
-        if (!alive) return
-        progress.visibility = if (busy) View.VISIBLE else View.GONE
-        pushBtn.isEnabled = !busy
-        zipBtn.isEnabled = !busy
-        filesBtn.isEnabled = !busy
-        folderBtn.isEnabled = !busy
-        clearBtn.isEnabled = !busy
-        accountBtn.isEnabled = !busy
+        netBusy = busy
+        applyBusy()
     }
 }

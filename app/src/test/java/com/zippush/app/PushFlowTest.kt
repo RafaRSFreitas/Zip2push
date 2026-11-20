@@ -186,6 +186,24 @@ class PushFlowTest {
                 assertEquals("https://github.com/alice/repo/commit/NEWSHA", activity.lastCommitUrl)
                 assertTrue("selection cleared after success", activity.tracker.hasSelection().not())
                 assertFalse("description collapsed after success", activity.isDescriptionExpanded())
+                assertTrue("status bar shows success", activity.statusTextForTest().contains("Pushed"))
+            }
+            // v0.2.9 render-once: rotating right after the result must not
+            // replay the toast nor re-clear a form the user started
+            // filling for the next push.
+            scenario.onActivity { activity ->
+                activity.setDescriptionTextForTest("next push body")
+            }
+            val toastsBefore = org.robolectric.shadows.ShadowToast.shownToastCount()
+            scenario.recreate()
+            idle()
+            scenario.onActivity { activity ->
+                assertEquals("no re-toast after rotation",
+                    toastsBefore, org.robolectric.shadows.ShadowToast.shownToastCount())
+                assertEquals("typed description must survive the rotation after a result",
+                    "next push body", activity.descriptionTextForTest())
+                // The bar still shows the previous push's result.
+                assertTrue(activity.statusTextForTest().contains("Pushed"))
             }
             // The description really reached the commit message (title \n\n body).
             val commit = requestBodies.first { it.contains("\"message\"") }
@@ -201,6 +219,10 @@ class PushFlowTest {
     @Test
     fun `second tap while pushing is refused`() {
         installDispatcher()
+        // Gate the commit POST so the push is provably still running
+        // when the second tap lands (MockWebServer answers instantly).
+        val commitGate = CountDownLatch(1)
+        gateCommitPostUntil(commitGate)
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             scenario.onActivity { connect(it) }
@@ -211,15 +233,26 @@ class PushFlowTest {
                 preparePush(activity)
                 activity.onPushClickedForTest()
                 // Second tap immediately after: the runner keeps exactly
-                // one push at a time.
+                // one push at a time. The refusal is a TOAST now, and the
+                // status bar stays on the push (v0.2.9).
                 activity.onPushClickedForTest()
+                assertEquals("status bar must stay on the push",
+                    "Pushing to alice/repo…", activity.statusTextForTest())
+                assertTrue("spinner must be spinning mid-push",
+                    activity.isSpinnerVisibleForTest())
             }
             idle()
+            // The refusal toast really fired.
+            assertEquals("second tap must toast 'in progress'",
+                "Push already in progress…",
+                org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+            commitGate.countDown()
             assertTrue("push must finish", runUntil { PushRunner.state is PushRunner.State.Done })
             // Exactly one full Git sequence hit the wire.
             val refReads = requestLog.count { it.startsWith("GET /repos/alice/repo/git/ref/heads/main") }
             assertEquals("exactly one push may run", 1, refReads)
         } finally {
+            commitGate.countDown()
             scenario.close()
         }
     }
@@ -255,8 +288,25 @@ class PushFlowTest {
 
             // Rotate: destroys the activity (and its scope) mid-push.
             scenario.recreate()
-            rotationDone.countDown()
+            idle()
 
+            // THE reported bug (v0.2.9): right after rotation the bar
+            // must still say the push is running and the spinner must be
+            // visible — the auto-connect ("Verifying token…", "Connected
+            // as…") and the repo refresh may NOT overwrite or clear it.
+            scenario.onActivity { activity ->
+                assertTrue("push still running after rotation",
+                    PushRunner.state is PushRunner.State.Running)
+                assertTrue("spinner must stay visible after rotation",
+                    activity.isSpinnerVisibleForTest())
+                assertTrue("status bar must still show the push after rotation: '" +
+                    activity.statusTextForTest() + "'",
+                    activity.statusTextForTest().contains("Pushing to alice/repo"))
+                assertTrue("Push must stay disabled mid-push",
+                    !activity.pushBtnEnabledForTest())
+            }
+
+            rotationDone.countDown()
             assertTrue("push must finish after rotation",
                 runUntil { PushRunner.state is PushRunner.State.Done })
             scenario.onActivity { activity ->
@@ -264,6 +314,10 @@ class PushFlowTest {
                 assertTrue("result must be success after rotation",
                     done.result is UploadEngine.PushResult.Success)
                 assertEquals("https://github.com/alice/repo/commit/NEWSHA", activity.lastCommitUrl)
+                assertTrue("status bar must show the success",
+                    activity.statusTextForTest().contains("Pushed"))
+                assertTrue("spinner must be gone after the push",
+                    !activity.isSpinnerVisibleForTest())
             }
             val refReads = requestLog.count { it.startsWith("GET /repos/alice/repo/git/ref/heads/main") }
             assertEquals("no second push after rotation", 1, refReads)

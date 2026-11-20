@@ -54,6 +54,10 @@
     <string name="clear_selection">Clear selection</string>
     <string name="push_to_github">Push to GitHub</string>
     <string name="push_in_progress">A push is already in progress — please wait for it to finish.</string>
+    <!-- v0.2.9: short toast variants (tap-level feedback never touches the status bar) -->
+    <string name="toast_push_in_progress">Push already in progress…</string>
+    <string name="toast_pick_repo">Pick a repository first</string>
+    <string name="toast_pick_files">Pick files or a ZIP first</string>
     <!-- v0.2.8 foreground service: silent, low-importance, no prompt. -->
     <string name="push_notif_channel">Push in progress</string>
     <string name="push_notif_channel_desc">Shows while a push is uploading, so it keeps running when you leave the app.</string>

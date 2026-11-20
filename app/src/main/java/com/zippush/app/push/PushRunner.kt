@@ -102,10 +102,30 @@ object PushRunner {
         synchronized(observers) { observers.clear() }
         state = State.Idle
         pending = null
+        presentedResultId = -1L
     }
 
     /** True while a push is in flight. */
     fun isBusy(): Boolean = state is State.Running
+
+    /**
+     * Id of the push whose result has already been PRESENTED to the
+     * user (toast + form clear) — globally, not per activity (v0.2.9).
+     * A recreated activity re-renders the status line for context but
+     * must not replay the toast nor re-clear a form the user started
+     * filling for the next push.
+     */
+    @Volatile
+    private var presentedResultId = -1L
+
+    /** True when [result] was already presented to the user. */
+    fun wasPresented(result: UploadEngine.PushResult): Boolean =
+        result.id == presentedResultId
+
+    /** Marks [result] as presented (called by the presenting activity). */
+    fun markPresented(result: UploadEngine.PushResult) {
+        presentedResultId = result.id
+    }
 
     /**
      * Starts a push. Returns false when one is already running (double
@@ -138,9 +158,18 @@ object PushRunner {
             val p = pending ?: return@launch
             val result = execute(p, appContext)
             pending = null
-            setState(State.Done(result))
+            setState(State.Done(withJobId(result, job.id)))
         }
         return true
+    }
+
+    /** Tags a result with the job it belongs to (see PushResult.id). */
+    private fun withJobId(
+        result: UploadEngine.PushResult,
+        id: Long
+    ): UploadEngine.PushResult = when (result) {
+        is UploadEngine.PushResult.Success -> result.copy(id = id)
+        is UploadEngine.PushResult.Failure -> result.copy(id = id)
     }
 
     /** The upload itself; runs on IO inside the runner's own scope. */

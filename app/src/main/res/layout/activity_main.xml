@@ -155,7 +155,14 @@
                             android:paddingEnd="16dp" />
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <!-- v0.2.9: same ExposedDropdown style as the repo /
+                         branch fields above (the chevron end-icon gives the
+                         box its taller band), so the target-folder field is
+                         the same size as the other fields. The dropdown
+                         end-icon doubles as the folder-hints affordance
+                         (Feature 2.4); free text is unaffected. -->
                     <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.ZipPush.TextInputLayout.ExposedDropdown"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
@@ -166,7 +173,9 @@
                             android:id="@+id/targetDirInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="text" />
+                            android:inputType="text"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp" />
                         <!-- Feature 2.4: hints from the repo's real folder
                              tree once a repo is selected. -->
                     </com.google.android.material.textfield.TextInputLayout>

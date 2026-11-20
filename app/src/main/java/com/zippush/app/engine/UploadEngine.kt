@@ -31,14 +31,27 @@ import java.io.File
 class UploadEngine(private val client: GitHubClient) {
 
     sealed class PushResult {
+        /**
+         * Identity of the push this result came from (the PushRunner job
+         * id): lets the UI tell a FRESH result (toast + clear the form)
+         * from one already displayed before a rotation (status only,
+         * no re-toast — v0.2.9).
+         */
+        abstract val id: Long
+
         data class Success(
             val commitSha: String,
             val commitUrl: String,
             val filesPushed: Int,
-            val bytesPushed: Long
+            val bytesPushed: Long,
+            override val id: Long = -1L
         ) : PushResult()
 
-        data class Failure(val stage: String, val message: String) : PushResult()
+        data class Failure(
+            val stage: String,
+            val message: String,
+            override val id: Long = -1L
+        ) : PushResult()
     }
 
     /** One file to upload, either from an archive entry or a standalone file. */

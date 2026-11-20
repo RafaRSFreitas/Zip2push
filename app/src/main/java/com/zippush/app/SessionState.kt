@@ -38,11 +38,30 @@ object SessionState {
     @Volatile
     var repoPickedThisSession: Boolean = false
 
+    /**
+     * Target folders the user actually pushed to this session, most
+     * recent first (v0.2.9). Feeds the target-folder suggestions; a
+     * fresh app start begins clean, like the rest of the session state.
+     */
+    private val _recentTargetDirs = mutableListOf<String>()
+
+    val recentTargetDirs: List<String> get() = _recentTargetDirs.toList()
+
+    /** Records a used target folder (deduped, newest first, capped). */
+    fun rememberTargetDir(dir: String) {
+        val d = dir.trim().trimEnd('/')
+        if (d.isEmpty()) return
+        _recentTargetDirs.removeAll { it == d }
+        _recentTargetDirs.add(0, d)
+        while (_recentTargetDirs.size > 5) _recentTargetDirs.removeAt(_recentTargetDirs.size - 1)
+    }
+
     /** Clears everything (logout / account switch). */
     fun clear() {
         selectedRepo = null
         selectedBranch = null
         repoPickedThisSession = false
+        _recentTargetDirs.clear()
     }
 
     /** Test seam. */
