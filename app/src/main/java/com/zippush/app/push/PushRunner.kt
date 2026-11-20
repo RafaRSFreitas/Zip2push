@@ -5,6 +5,8 @@ import android.net.Uri
 import com.zippush.app.R
 import com.zippush.app.SelectionTracker
 import com.zippush.app.engine.UploadEngine
+import com.zippush.app.history.HistoryEntry
+import com.zippush.app.history.PushHistoryStore
 import com.zippush.app.net.GitHubClient
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -108,6 +110,13 @@ object PushRunner {
 
     private var pending: Pending? = null
 
+    /**
+     * Repo paths of the files of the push being executed (v0.3.3) —
+     * filled by [execute] on IO, read by [recordHistory] right after,
+     * on the same coroutine. Only meaningful while a push runs.
+     */
+    private val resolvedPaths = mutableListOf<String>()
+
     /** Registers [observer]; returns false if it was already registered. */
     fun addObserver(observer: Observer): Boolean = synchronized(observers) {
         if (observers.contains(observer)) false else observers.add(observer)
@@ -122,6 +131,7 @@ object PushRunner {
         synchronized(observers) { observers.clear() }
         state = State.Idle
         pending = null
+        synchronized(resolvedPaths) { resolvedPaths.clear() }
         presentedResultId = -1L
     }
 
@@ -182,9 +192,55 @@ object PushRunner {
             val p = pending ?: return@launch
             val result = execute(p, appContext)
             pending = null
+            // v0.3.3: every finished push lands in the local History
+            // (successes AND failures — the user wants to know what was
+            // pushed and what went wrong). Best-effort: a history write
+            // must never fail the push flow.
+            runCatching { recordHistory(appContext, p, result) }
             setState(State.Done(withJobId(result, p.job.id)))
         }
         return true
+    }
+
+    /** Persists one finished push for the History screen (v0.3.3). */
+    private fun recordHistory(
+        context: Context,
+        p: Pending,
+        result: UploadEngine.PushResult
+    ) {
+        val entry = when (result) {
+            is UploadEngine.PushResult.Success -> HistoryEntry(
+                timestamp = System.currentTimeMillis(),
+                repoFullName = p.repo.fullName,
+                branch = p.branch,
+                targetDir = p.targetDir,
+                messageTitle = p.message.substringBefore('\n'),
+                authorLogin = p.authorLogin ?: "",
+                success = true,
+                commitSha = result.commitSha,
+                commitUrl = result.commitUrl,
+                // Repo paths resolved during the upload (ZIP entries,
+                // folder files, standalone files) — see resolvedPaths.
+                files = synchronized(resolvedPaths) { resolvedPaths.toList() },
+                bytesPushed = result.bytesPushed,
+                failReason = null
+            )
+            is UploadEngine.PushResult.Failure -> HistoryEntry(
+                timestamp = System.currentTimeMillis(),
+                repoFullName = p.repo.fullName,
+                branch = p.branch,
+                targetDir = p.targetDir,
+                messageTitle = p.message.substringBefore('\n'),
+                authorLogin = p.authorLogin ?: "",
+                success = false,
+                commitSha = null,
+                commitUrl = null,
+                files = emptyList(),
+                bytesPushed = 0L,
+                failReason = "${result.stage}: ${result.message}"
+            )
+        }
+        PushHistoryStore.record(context, entry)
     }
 
     /** Tags a result with the job it belongs to (see PushResult.id). */
@@ -203,6 +259,13 @@ object PushRunner {
     ): UploadEngine.PushResult {
         return try {
             val files = buildFileList(p.engine, p.selection, appContext)
+            // v0.3.3: the resolved repo paths of this push feed the
+            // History entry (the names are only known here, after the
+            // ZIP/folder extraction on IO).
+            synchronized(resolvedPaths) {
+                resolvedPaths.clear()
+                resolvedPaths.addAll(files.map { it.path })
+            }
             if (files.isEmpty()) {
                 UploadEngine.PushResult.Failure(
                     "Prepare",

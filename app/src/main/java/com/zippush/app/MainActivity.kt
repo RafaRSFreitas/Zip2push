@@ -32,6 +32,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.zippush.app.browser.FolderBrowser
 import com.zippush.app.engine.UploadEngine
+import com.zippush.app.history.PushHistoryDialog
 import com.zippush.app.net.GitHubClient
 import com.zippush.app.push.PushRunner
 import com.zippush.app.push.PushService
@@ -70,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val MENU_ABOUT = 100
         private const val MENU_DONATIONS = 101
+        private const val MENU_HISTORY = 102
         private const val PREF_THEME_MODE = "theme_mode"
         private const val STATE_BACKDATE_EPOCH = "backdate_epoch_ms"
     }
@@ -625,13 +627,15 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------- overflow menu
 
-    /** 3-dot menu (top right): About and Donations. */
+    /** 3-dot menu (top right): History, About and Donations. */
     private fun showOverflowMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
-        popup.menu.add(0, MENU_ABOUT, 0, R.string.menu_about)
-        popup.menu.add(0, MENU_DONATIONS, 1, R.string.menu_donations)
+        popup.menu.add(0, MENU_HISTORY, 0, R.string.menu_history)
+        popup.menu.add(0, MENU_ABOUT, 1, R.string.menu_about)
+        popup.menu.add(0, MENU_DONATIONS, 2, R.string.menu_donations)
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                MENU_HISTORY -> { showHistoryDialog(); true }
                 MENU_ABOUT -> { showAboutDialog(); true }
                 MENU_DONATIONS -> { showDonationsDialog(); true }
                 else -> false
@@ -639,6 +643,23 @@ class MainActivity : AppCompatActivity() {
         }
         popup.show()
     }
+
+    /** v0.3.3: the push History (list + details + GitHub link). */
+    private fun showHistoryDialog() {
+        historyDialogViewForTest = PushHistoryDialog.show(this)
+    }
+
+    /** Test hook: opens the History dialog (the menu action's route). */
+    internal fun showHistoryDialogForTest() {
+        showHistoryDialog()
+    }
+
+    /** Test hook: the view of the LAST History dialog shown. */
+    internal fun lastHistoryDialogViewForTest(): View? =
+        historyDialogViewForTest
+
+    /** The last History dialog's content view (set when it opens). */
+    private var historyDialogViewForTest: View? = null
 
     // ------------------------------------------------------------- theme toggle
 
@@ -1386,6 +1407,14 @@ class MainActivity : AppCompatActivity() {
     internal fun setTargetDirTextForTest(text: String) {
         targetDirInput.setText(text)
     }
+
+    /** Test hook: set the commit message (title line). */
+    internal fun setCommitMessageForTest(text: String) {
+        commitMessageInput.setText(text)
+    }
+
+    /** Test hook: the token vault (accounts) of this activity. */
+    internal fun vaultForTest() = vault
 
     /**
      * Test hook: select a repository through the REAL selection path

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The History dialog (v0.3.3): list of finished pushes, newest first,
+     with a Clear history action in the title bar area. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/historyList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:minHeight="200dp"
+        android:overScrollMode="ifContentScrolls"
+        android:clipToPadding="false"
+        android:paddingBottom="8dp" />
+
+    <!-- Empty state, shown instead of the list when there is no history. -->
+    <TextView
+        android:id="@+id/historyEmptyText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="32dp"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:visibility="gone" />
+</LinearLayout>

@@ -33,7 +33,7 @@
     <string name="new_branch_dialog_hint">Branch name</string>
     <string name="create_branch_dialog_helper">New branch starts from the selected branch.</string>
     <string name="create">Create</string>
-    <string name="target_dir_hint">Target folder in the repo (optional)</string>
+    <string name="target_dir_hint">Target folder (optional)</string>
     <string name="target_dir_helper">Example: assignments/week3 — files land under this folder. Empty = repository root.</string>
     <string name="commit_message_hint">Commit message</string>
     <string name="backdate_title">Commit date &amp; time</string>
@@ -130,4 +130,26 @@
 
     <!-- ================== v0.3.1 push progress ================== -->
     <string name="push_progress_files">Pushing to %1$s — %2$d of %3$d files…</string>
+
+    <!-- ================== v0.3.3 push history ================== -->
+    <string name="menu_history">History</string>
+    <string name="history_title">Push history</string>
+    <string name="history_empty">No pushes yet.\nYour pushes will show up here.</string>
+    <string name="history_clear">Clear history</string>
+    <string name="history_clear_confirm_title">Clear push history?</string>
+    <string name="history_clear_confirm_text">This deletes the list of past pushes on this device. Repositories on GitHub are not affected.</string>
+    <string name="history_repo_branch">%1$s · %2$s</string>
+    <string name="history_files_count">%1$d files</string>
+    <string name="history_one_file">1 file</string>
+    <string name="history_failed">Failed</string>
+    <string name="history_see_changes">See changes on GitHub</string>
+    <string name="history_files_header">Files in this push</string>
+    <string name="history_root">repository root</string>
+    <string name="history_folder">Folder: %1$s</string>
+    <string name="history_author">by %1$s</string>
+    <string name="history_and_more">+ %1$d more</string>
+    <string name="history_show_all_files">Show all %1$d files</string>
+    <string name="history_details">Details</string>
+    <string name="history_bytes">%1$s</string>
+    <string name="history_delete">Delete</string>
 </resources>
