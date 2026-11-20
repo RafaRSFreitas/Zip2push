@@ -44,6 +44,8 @@ class UploadEngine(private val client: GitHubClient) {
             val commitUrl: String,
             val filesPushed: Int,
             val bytesPushed: Long,
+            /** v0.3.5: the repo-relative paths that landed in the commit. */
+            val pushedPaths: List<String> = emptyList(),
             override val id: Long = -1L
         ) : PushResult()
 
@@ -98,11 +100,6 @@ class UploadEngine(private val client: GitHubClient) {
      * the current head first. If [authorDate] is non-null the commit is
      * retroactive (backdated); [authorLogin] fills the required author
      * name/email fields.
-     *
-     * [onProgress] (v0.3.1) is invoked after each file's blob upload with
-     * how many files are done and the total — one report per file, so a
-     * UI can render a real "x of y files" progress. It runs on the
-     * CALLER's thread (this method is synchronous, on IO).
      */
     fun push(
         owner: String,
@@ -113,8 +110,7 @@ class UploadEngine(private val client: GitHubClient) {
         commitMessage: String,
         files: List<PendingFile>,
         authorDate: String? = null,
-        authorLogin: String? = null,
-        onProgress: ((done: Int, total: Int) -> Unit)? = null
+        authorLogin: String? = null
     ): PushResult {
         try {
             // Bug 1.9: an empty push would create an empty commit and
@@ -178,9 +174,6 @@ class UploadEngine(private val client: GitHubClient) {
                 }
                 treeEntries.add(GitHubClient.TreeEntry(path = full, sha = blobSha))
                 totalBytes += f.bytes.size
-                // v0.3.1: one progress report per uploaded file — the
-                // blobs are the long, per-file part of the push.
-                onProgress?.invoke(treeEntries.size, files.size)
             }
             if (treeEntries.isEmpty()) {
                 return PushResult.Failure("Prepare", "No safe file paths to push")
@@ -210,7 +203,8 @@ class UploadEngine(private val client: GitHubClient) {
                             commitSha = commitSha,
                             commitUrl = "https://github.com/$owner/$repo/commit/$commitSha",
                             filesPushed = treeEntries.size,
-                            bytesPushed = totalBytes
+                            bytesPushed = totalBytes,
+                            pushedPaths = files.map { it.path }
                         )
                     }
                     is GitHubClient.ApiResult.Error -> {

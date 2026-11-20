@@ -11,9 +11,7 @@ ZipPush is inspired by the workflow of "ZIP to GitHub Upload" (com.zip2git) but 
 - **Create a new branch** — optionally type a new branch name; it is created from the selected branch and the push targets it.
 - **ZIP upload** — pick a `.zip` and its contents are pushed into the repository. If the archive has a single root folder, it is stripped automatically so files land where you expect.
 - **Multiple file upload** — pick any number of individual files and push them all in one commit.
-- **Target folder Explorer** — the folder icon on the target-folder field opens a popup that browses the REAL folders of the selected repository/branch, Explorer-style: tappable breadcrumbs (`repo / folder / subfolder`), a dedicated level-up button to return to the parent folder, one-tap navigation into subfolders, a "New folder…" action (nested names supported) and "Choose this folder" to confirm. Free-typing a path still works; existing repo files are preserved.
-- **Push progress with file counter** — while the push uploads, the status line shows how many files are going up ("Pushing to repo — 3 of 7 files…") and the bottom bar turns into a determinate progress bar that advances with each file.
-- **Account switch refreshes the push card** — switching the GitHub account (or connecting a new token) automatically resets the repository, branch, target folder and the previous push's link, then loads the new account's repositories. Picked files stay; the auto-reconnect after a screen rotation never clears anything.
+- **Target folder** — optionally push into a subfolder of the repo (e.g. `assignments/week3`); existing repo files are preserved.
 - **Custom commit messages** — or accept the default.
 - **Private repository support** — works with any token that has access.
 - **Token stays on device** — the PAT is stored encrypted with a hardware-backed Android Keystore key (AES/GCM). No backend, no analytics, no server storage of tokens or files.

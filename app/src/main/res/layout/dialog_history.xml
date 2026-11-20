@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v0.3.5 History dialog: list of past pushes. A RecyclerView keeps
+     it cheap for the 50-entry cap; rows are built in code
+     (PushHistoryDialog) so there is no per-item layout file to keep
+     in sync with the Entry fields. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/historyList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="vertical"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:clipToPadding="false" />
+
+    <TextView
+        android:id="@+id/historyEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="32dp"
+        android:text="@string/history_empty"
+        android:visibility="gone" />
+</LinearLayout>

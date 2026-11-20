@@ -155,21 +155,18 @@
                             android:paddingEnd="16dp" />
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <!-- v0.3.0: same ExposedDropdown look as repo / branch
-                         (equal 48dp band), but the end icon is a FOLDER
-                         button that opens the repository folder Explorer
-                         (breadcrumbs, real repo folders, new-folder
-                         action, level-up); free text is still accepted. -->
+                    <!-- v0.2.9: same ExposedDropdown style as the repo /
+                         branch fields above (the chevron end-icon gives the
+                         box its taller band), so the target-folder field is
+                         the same size as the other fields. The dropdown
+                         end-icon doubles as the folder-hints affordance
+                         (Feature 2.4); free text is unaffected. -->
                     <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/targetDirLayout"
                         style="@style/Widget.ZipPush.TextInputLayout.ExposedDropdown"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:hint="@string/target_dir_hint"
-                        app:endIconMode="custom"
-                        app:endIconDrawable="@drawable/ic_folder"
-                        app:endIconContentDescription="@string/browser_title"
                         app:helperText="@string/target_dir_helper">
 
                         <com.google.android.material.textfield.MaterialAutoCompleteTextView

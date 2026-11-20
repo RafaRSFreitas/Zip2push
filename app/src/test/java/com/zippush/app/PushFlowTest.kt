@@ -234,15 +234,10 @@ class PushFlowTest {
                 activity.onPushClickedForTest()
                 // Second tap immediately after: the runner keeps exactly
                 // one push at a time. The refusal is a TOAST now, and the
-                // status bar stays on the push (v0.2.9) — with the file
-                // counter once the first blob landed (v0.3.1).
+                // status bar stays on the push (v0.2.9).
                 activity.onPushClickedForTest()
-                val status = activity.statusTextForTest()
-                assertTrue(
-                    "status bar must stay on the push, was: $status",
-                    status == "Pushing to alice/repo…" ||
-                        status.startsWith("Pushing to alice/repo — ")
-                )
+                assertEquals("status bar must stay on the push",
+                    "Pushing to alice/repo…", activity.statusTextForTest())
                 assertTrue("spinner must be spinning mid-push",
                     activity.isSpinnerVisibleForTest())
             }
