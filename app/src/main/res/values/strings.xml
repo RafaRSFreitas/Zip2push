@@ -113,9 +113,9 @@
     <!-- 2.10 accent -->
     <!-- 2.9 conflict -->
 
-    <!-- ======================= v0.3.0 target-folder Explorer ======================= -->
+    <!-- ================== v0.3.0 target-folder Explorer ================== -->
     <string name="browser_title">Choose target folder</string>
-    <string name="browser_subtitle">Folders of the selected repository and branch. Files are hidden — this picks a destination.</string>
+    <string name="browser_subtitle">Folders of the selected repository and branch.</string>
     <string name="browser_new_folder">New folder…</string>
     <string name="browser_new_folder_title">New folder</string>
     <string name="browser_new_folder_hint">Folder name (e.g. assignments/week4)</string>
@@ -126,4 +126,8 @@
     <string name="browser_need_repo">Pick a repository and branch first</string>
     <string name="browser_selected_root">Target folder set to the repository root.</string>
     <string name="browser_selected_folder">Target folder set to %1$s</string>
+    <string name="browser_up_desc">Go up one level</string>
+
+    <!-- ================== v0.3.1 push progress ================== -->
+    <string name="push_progress_files">Pushing to %1$s — %2$d of %3$d files…</string>
 </resources>

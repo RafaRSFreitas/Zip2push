@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -78,6 +79,7 @@ class FolderBrowser(
     private val rows = mutableListOf<Row>()
 
     private lateinit var breadcrumbContainer: LinearLayout
+    private lateinit var upBtn: ImageButton
     private lateinit var list: RecyclerView
     private lateinit var emptyView: TextView
     private lateinit var loading: CircularProgressIndicator
@@ -105,6 +107,7 @@ class FolderBrowser(
         currentRepoName = repo.name
         val view = LayoutInflater.from(context).inflate(R.layout.dialog_folder_browser, null)
         breadcrumbContainer = view.findViewById(R.id.browserBreadcrumbs)
+        upBtn = view.findViewById(R.id.browserUpBtn)
         list = view.findViewById(R.id.browserList)
         emptyView = view.findViewById(R.id.browserEmpty)
         loading = view.findViewById(R.id.browserLoading)
@@ -115,6 +118,11 @@ class FolderBrowser(
         list.layoutManager = LinearLayoutManager(context)
         list.adapter = adapter
         wireNavigation(repo, branch)
+
+        // v0.3.1: one tap returns to the parent folder (the Explorer
+        // affordance the breadcrumbs alone did not give). At the repo
+        // root there is no parent, so the button disables itself.
+        upBtn.setOnClickListener { goUp() }
 
         chooseBtn.setOnClickListener {
             onResult(Result.Selected(currentPath))
@@ -151,6 +159,7 @@ class FolderBrowser(
         currentPath = clean
         currentRepoName = repo.name
         renderBreadcrumbs(repo.name)
+        refreshUpButton()
         setLoading(true)
         adapter.notifyDataSetChanged() // rows will be replaced
         rows.clear()
@@ -269,6 +278,37 @@ class FolderBrowser(
         pendingNav = { path -> navigateTo(repo, branch, path) }
     }
 
+    /**
+     * Parent of the current path ("" when already at the repo root):
+     * "a/b/c" -> "a/b", "a" -> "".
+     */
+    private fun parentOf(path: String): String =
+        path.substringBeforeLast('/', "")
+
+    /**
+     * v0.3.1: goes up one level — the "back to the previous folder"
+     * affordance. Re-uses the normal navigation (same loading state,
+     * same breadcrumbs, same cancellation guarantees); when a listing
+     * is already in flight the tap is ignored instead of stacking a
+     * second fetch on top.
+     */
+    private fun goUp() {
+        if (loadingFolder) return
+        val parent = parentOf(currentPath)
+        if (parent == currentPath) return // already at the root
+        pendingNav?.invoke(parent)
+    }
+
+    /**
+     * Enables the up button only when a parent exists (any path below
+     * the repo root); at the root the affordance stays visible but
+     * disabled, so its position never jumps while navigating.
+     */
+    private fun refreshUpButton() {
+        upBtn.isEnabled = currentPath.isNotEmpty()
+        upBtn.alpha = if (currentPath.isEmpty()) 0.35f else 1f
+    }
+
     /** Row adapter: folder rows + the trailing new-folder action. */
     private inner class RowAdapter : RecyclerView.Adapter<RowAdapter.Holder>() {
 
@@ -358,6 +398,7 @@ class FolderBrowser(
         rows.clear()
         rows.add(Row.NewFolder)
         renderBreadcrumbs(currentRepoName ?: return)
+        refreshUpButton()
         renderList()
     }
 
@@ -432,4 +473,14 @@ class FolderBrowser(
 
     /** Test seam: the choose button click without a real dialog tap. */
     internal fun chooseForTest() = chooseBtn.performClick()
+
+    /** Test seam: the up (level-up) button state — null when disabled
+     *  by path, plus whether a tap would do anything. */
+    internal fun upEnabledForTest(): Boolean = upBtn.isEnabled
+
+    /** Test seam: simulate a level-up tap. */
+    internal fun tapUpForTest() = upBtn.performClick()
+
+    /** Test seam: parent-path computation used by the up button. */
+    internal fun parentOfForTest(path: String): String = parentOf(path)
 }

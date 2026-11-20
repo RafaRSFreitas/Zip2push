@@ -414,7 +414,7 @@ class MainActivity : AppCompatActivity() {
 
         // v0.3.0: the folder icon on the target-folder field opens the
         // repository folder Explorer (real folders of the selected
-        // repo/branch, breadcrumbs, new-folder action).
+        // repo/branch, breadcrumbs, level-up, new-folder action).
         targetDirLayout.setEndIconOnClickListener { openFolderBrowser() }
 
         zipBtn.setOnClickListener {
@@ -543,6 +543,13 @@ class MainActivity : AppCompatActivity() {
         if (!alive) return
         val busy = netBusy || PushRunner.isBusy()
         progress.visibility = if (busy) View.VISIBLE else View.GONE
+        // v0.3.1: outside a running push WITH a file counter, the bar is
+        // the classic indeterminate one (connect / load / push-prepare).
+        if (PushRunner.state !is PushRunner.State.Running ||
+            (PushRunner.state as PushRunner.State.Running).progress == null
+        ) {
+            progress.isIndeterminate = true
+        }
         pushBtn.isEnabled = !busy
         zipBtn.isEnabled = !busy
         filesBtn.isEnabled = !busy
@@ -1122,9 +1129,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun onRepoSelected(repo: GitHubClient.Repo) {
+        // v0.3.2: a folder picked for the PREVIOUS repository does not
+        // belong to this one (another repo = another folder tree), so
+        // CHANGING the repository clears the target folder — same rule
+        // as the branch field right below. Re-picking the SAME repo
+        // (e.g. to refresh its branches) keeps the chosen folder.
+        val repoChanged = selectedRepo?.fullName != repo.fullName
         selectedRepo = repo
         selectedBranch = null
         branchDropdown.setText("", false)
+        if (repoChanged) {
+            targetDirInput.setText("")
+            refreshTargetDirSuggestions()
+        }
         viewRepoBtn.visibility = View.GONE
         lastCommitUrl = null
         setBusy(true)
@@ -1361,6 +1378,24 @@ class MainActivity : AppCompatActivity() {
         return (0 until (ad?.count ?: 0)).map { ad?.getItem(it)?.toString() ?: "" }
     }
 
+    /** Test hook: the target-folder field text ("" = repository root). */
+    internal fun targetDirTextForTest(): String =
+        targetDirInput.text?.toString().orEmpty()
+
+    /** Test hook: set the target-folder field as if typed. */
+    internal fun setTargetDirTextForTest(text: String) {
+        targetDirInput.setText(text)
+    }
+
+    /**
+     * Test hook: select a repository through the REAL selection path
+     * (the dropdown listener -> onRepoSelected: loads branches, resets
+     * branch and — v0.3.2 — the target folder).
+     */
+    internal fun selectRepoForTest(repo: GitHubClient.Repo) {
+        scope.launch { onRepoSelected(repo) }
+    }
+
     // ------------------------------------------------- folder explorer (v0.3.0)
 
     /**
@@ -1440,6 +1475,21 @@ class MainActivity : AppCompatActivity() {
     internal fun createFolderInBrowserForTest(name: String) {
         folderBrowser?.createFolderForTest(name)
     }
+
+    /** Test hook: whether the Explorer's level-up button is enabled. */
+    internal fun folderBrowserUpEnabledForTest(): Boolean? =
+        folderBrowser?.upEnabledForTest()
+
+    /** Test hook: tap the Explorer's level-up button. */
+    internal fun tapBrowserUpForTest() { folderBrowser?.tapUpForTest() }
+
+    /** Test hook: the push progress bar state (null when indeterminate). */
+    internal fun pushProgressForTest(): Pair<Int, Int>? =
+        if (!progress.isIndeterminate) Pair(progress.progress, progress.max) else null
+
+    /** Test hook: whether the Explorer is fetching a folder listing. */
+    internal fun folderBrowserLoadingForTest(): Boolean =
+        folderBrowser?.isLoadingForTest() ?: false
 
     /**
      * Clear Selection: resets the whole form — picked files, repository,
@@ -1640,7 +1690,27 @@ class MainActivity : AppCompatActivity() {
             is PushRunner.State.Running -> {
                 applyBusy()
                 holdDoneResult = null
-                statusText.text = st.job.description
+                val progressInfo = st.progress
+                if (progressInfo != null && progressInfo.total > 0) {
+                    // v0.3.1: real file counter once the first blob
+                    // landed — "Pushing to repo — 3 of 7 files…" with a
+                    // DETERMINATE bar the user can see move.
+                    statusText.text = getString(
+                        R.string.push_progress_files,
+                        st.job.repoFullName,
+                        progressInfo.done,
+                        progressInfo.total
+                    )
+                    progress.isIndeterminate = false
+                    progress.max = progressInfo.total
+                    progress.setProgressCompat(
+                        progressInfo.done.coerceAtMost(progressInfo.total),
+                        true
+                    )
+                } else {
+                    statusText.text = st.job.description
+                    progress.isIndeterminate = true
+                }
                 statusIcon.setImageResource(R.drawable.ic_info)
                 statusIcon.imageTintList =
                     ColorStateList.valueOf(ContextCompat.getColor(this, R.color.status_text))

@@ -35,15 +35,35 @@ object PushRunner {
     /** A push in progress. */
     data class PushJob(
         val id: Long,
-        val description: String
+        val description: String,
+        /** "owner/name" of the target repo — lets the UI compose its own
+         *  progress text (v0.3.1) without parsing [description]. */
+        val repoFullName: String = ""
     )
 
     /** Observable push lifecycle. */
     sealed class State {
         object Idle : State()
-        data class Running(val job: PushJob) : State()
+
+        /**
+         * A push is running. [progress] (v0.3.1) carries the file
+         * counter once the first blob landed: done / total files. Null
+         * while the push is still preparing (reading the selection /
+         * resolving the branch) — the UI shows an indeterminate bar then.
+         */
+        data class Running(
+            val job: PushJob,
+            val progress: Progress? = null
+        ) : State()
+
         data class Done(val result: UploadEngine.PushResult) : State()
     }
+
+    /**
+     * File-count progress of a running push (v0.3.1): how many of the
+     * [total] files have been uploaded (blobbed) so far.
+     */
+    data class Progress(val done: Int, val total: Int)
 
     /** Called on the main thread whenever the state changes. */
     fun interface Observer {
@@ -127,6 +147,10 @@ object PushRunner {
         presentedResultId = result.id
     }
 
+    /** Test seam: the latest progress report of the running push, if any. */
+    fun currentProgressForTest(): Progress? =
+        (state as? State.Running)?.progress
+
     /**
      * Starts a push. Returns false when one is already running (double
      * tap) — the caller shows "already in progress" in that case.
@@ -147,7 +171,7 @@ object PushRunner {
         authorLogin: String?
     ): Boolean {
         if (isBusy()) return false
-        val job = PushJob(nextId++, "Pushing to ${repo.fullName}…")
+        val job = PushJob(nextId++, "Pushing to ${repo.fullName}…", repo.fullName)
         val appContext = context.applicationContext
         pending = Pending(
             job, engine, selection, repo, branch, targetDir, message,
@@ -158,7 +182,7 @@ object PushRunner {
             val p = pending ?: return@launch
             val result = execute(p, appContext)
             pending = null
-            setState(State.Done(withJobId(result, job.id)))
+            setState(State.Done(withJobId(result, p.job.id)))
         }
         return true
     }
@@ -194,7 +218,14 @@ object PushRunner {
                     commitMessage = p.message,
                     files = files,
                     authorDate = p.authorDateIso,
-                    authorLogin = p.authorLogin
+                    authorLogin = p.authorLogin,
+                    // v0.3.1: each uploaded blob updates the Running
+                    // state with its file counter, so the UI can show a
+                    // real "x of y files" progress bar. Emitted from the
+                    // IO thread; setState hops to main itself.
+                    onProgress = { done, total ->
+                        setState(State.Running(p.job, Progress(done, total)))
+                    }
                 )
             }
         } catch (t: Throwable) {
@@ -278,6 +309,11 @@ object PushRunner {
     }
 
     private fun setState(newState: State) {
+        // v0.3.1: progress updates arrive from the IO thread while the
+        // job runs; a RUNNING state must never overwrite the terminal
+        // DONE of the same job (the last callback could race the result
+        // notification on the main thread).
+        if (newState is State.Running && state is State.Done) return
         state = newState
         // Observers are notified on the main thread (they touch views);
         // failures there are contained by notifyGuard.

@@ -159,7 +159,7 @@
                          (equal 48dp band), but the end icon is a FOLDER
                          button that opens the repository folder Explorer
                          (breadcrumbs, real repo folders, new-folder
-                         action); free text is still accepted. -->
+                         action, level-up); free text is still accepted. -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/targetDirLayout"
                         style="@style/Widget.ZipPush.TextInputLayout.ExposedDropdown"
