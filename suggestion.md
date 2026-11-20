@@ -1,44 +1,38 @@
-# Zip2Push — v0.2.9 (a barra de informação sempre correta)
+# Zip2Push — v0.3.0 (explorador de pastas do repo + card sempre fiel à conta)
 
-> **Problema relatado:** durante um push, girar o aparelho fazia o loading "sumir" — a barra parecia dizer que o push parou (embora ele continuasse: tentar de novo mostrava "in progress"). Avisos como "push já em andamento" apareciam na própria barra, poluindo-a. E o campo da pasta de destino era mais fino que os outros campos.
+> **Pedidos atendidos:** (1) o campo *Target folder in the repo* agora abre um popup estilo **Explorer** com as **pastas reais do repositório/branch selecionados**, navegação por **breadcrumbs**, ação **New folder** e confirmação com um toque; (2) trocar a conta do GitHub **atualiza automaticamente o card "Choose what to push"** — seleções da conta anterior não sobrevivem à troca.
 
-## O que mudou
+## 1. Explorador de pastas do repositório (target folder)
 
-### 1. A barra de status agora tem um dono claro durante o push
+O ícone de pasta no campo de destino abre o popup. A pesquisa de UX que embasou o desenho: **breadcrumbs** são o padrão clássico de *wayfinding* hierárquico (NN/g, "Breadcrumbs: 11 Design Guidelines"), com a **localização atual sempre visível e distinguível**; listas de uma linha com ícone + nome são o padrão do Material 3 para seleção em hierarquias; e o popup **filtra arquivos** (é um seletor de destino, não um file picker). A navegação busca **uma página de diretório por salto** via `GET /repos/{owner}/{repo}/contents/{path}?ref={branch}` — exatamente o que o browser de arquivos do próprio GitHub faz; nada de baixar a árvore inteira do repo.
 
-Causa raiz do "loading sumiu": após a rotação, a activity nova reconecta sozinha ("Verifying token…", "Connected as…", "Loading repositories…") e essas mensagens **sobrescreviam** a linha do push; pior, o fim do carregamento de repositórios chamava `setBusy(false)` e **escondia o spinner** no meio do push.
+- **Breadcrumbs**: `repositório / pasta / subpasta`, cada crumb clicável para pular direto; a crumb atual em negrito.
+- **Pastas reais**: subpastas do diretório corrente na branch selecionada (ordenadas alfabeticamente); arquivos ficam ocultos.
+- **New folder…**: linha dedicada no fim da lista; aceita nomes aninhados (`assignments/week4`), sanitiza segmentos vazios, `.` e `..` e anexa ao caminho atual **sem chamada de rede** — no Git a pasta só materializa no GitHub quando o primeiro push aterrissa nela. Após criar, o usuário continua podendo aninhar mais ou confirmar.
+- **Choose this folder**: grava o caminho no campo (texto simples, o mesmo que o push consome) e fecha o popup.
+- **Estados**: spinner durante o fetch, "no subfolders" com a ação de criar pasta acessível, e erro inline com a mensagem da API. Repo vazio (HTTP 409 do contents) é tratado como pasta vazia, não como erro.
+- **Pré-requisito**: exige repo+branch selecionados; sem eles, um toast curto avisa ("Pick a repository and branch first") em vez de abrir o popup.
+- O campo continua aceitando **texto livre** — digitar `assignments/week3` à mão funciona como sempre funcionou.
 
-v0.2.9 resolve com três regras:
+Detalhe técnico: o limite de **1.000 entradas por diretório** da API de contents é propagado como erro explícito (o popup diz o que aconteceu em vez de mostrar árvore parcial).
 
-- **O spinner é a soma de dois estados**: trabalho de rede da tela (conectar/carregar listas) OU o push em andamento. O carregamento de repositórios terminando não pode mais esconder o spinner de um push ativo — um único escritor (`applyBusy`) controla isso.
-- **Durante o push, a barra é dele**: mensagens de fundo que chegam no meio do push (conectado, repositórios carregados, branches carregadas) são descartadas — o push é a informação mais importante. A barra continua mostrando "Pushing to repo…" até o resultado real.
-- **Depois do push, o resultado fica**: a reconexão automática pós-rotação ("Verifying token…", "Connected as…") não pode mais apagar o "Pushed ✓ files" da barra — o resultado fica retido até você começar algo novo (dar outro push, reconectar manualmente, recarregar, limpar). Ações suas limpam a retenção; processos automáticos, não.
+## 2. Card "Choose what to push" atualizado ao trocar de conta
 
-Após a rotação, portanto: a barra continua "Pushing to …", o spinner continua girando, o botão Push continua desabilitado — e quando o push termina, "Pushed ✓ files" + link do commit, que continuam lá mesmo se você girar de novo.
+Ao conectar com outra conta (popup de contas → tocar numa conta, ou conectar um token novo), o card é **resetado automaticamente**: repositório, branch, pasta de destino e o botão *View on GitHub* do push anterior são limpos — essa seleções pertencem à conta anterior e não fazem sentido para a nova. A lista de repos da nova conta chega em seguida e o dropdown abre sozinho (comportamento de "sessão nova" preservado).
 
-### 2. Avisos de toque viraram pop-ups (toasts)
-
-"Push already in progress…", "Pick a repository first", "Pick files or a ZIP first" agora aparecem como **toast de poucos segundos** perto do fundo da tela, em vez de tomarem a barra de status — exatamente como pedido. A barra fica reservada para o estado real (conexão / push / resultado). Textos curtos próprios para toast (`toast_push_in_progress` etc.).
-
-Bônus corrigido no caminho: girar o aparelho logo após um push concluído **não** repete o toast "Pushed ✓" nem apaga um formulário que você já começou a preencher para o próximo push — cada resultado é apresentado uma única vez no app (o resultado carrega o id do push; a tela nova re-renderiza a barra para contexto, mas sem re-toast e sem re-limpeza).
-
-### 3. Campo da pasta de destino do mesmo tamanho dos outros
-
-O campo usava o estilo base (caixa mais fina); os campos de repositório/branch usam o estilo "ExposedDropdown" (com chevron, banda mais alta). Agora o campo de destino usa o mesmo estilo — **altura medida e igualada: repo 48dp = branch 48dp = pasta 48dp** (verificado em teste de layout real, não a olho).
-
-O chevron agora é um afordance honesto: abre sugestões **offline** de pasta — as pastas-mãe dos arquivos já selecionados (você acabou de mostrar onde seu conteúdo vive) e as pastas usadas em pushes anteriores nesta sessão, mais recente primeiro. Nada de rede, nada de histórico persistente (a sessão zera ao reiniciar o app, como o resto do estado).
+O que **não** muda: os arquivos escolhidos (ZIP/files/folder) permanecem — são do usuário, não da conta; e o **auto-reconnect pós-rotação** não reseta nada (a seleção precisa sobreviver ao giro de tela, comportamento v0.2.8 mantido e coberto por teste).
 
 ## Testes
 
-Suíte completa verde (94 testes), incluindo os novos:
+Suíte completa + 17 testes novos:
 
-- `push survives screen rotation started before completion` agora também afirma que **logo após a rotação** a barra mostra "Pushing to alice/repo…", o spinner está visível e o Push desabilitado; e ao fim, "Pushed" na barra e spinner fora;
-- segundo toque durante o push: o toast certo é disparado, a barra continua no push e o spinner gira (commit POST travado por gate — determinístico);
-- rotação pós-resultado: nenhum re-toast, texto digitado preservado, e a barra **continua** com "Pushed…" mesmo depois da auto-reconexão da tela nova;
-- `TargetFieldGeometryTest`: alturas medidas iguais (repo 48 = branch 48 = pasta 48) em layout inflado de verdade; sugestões de pasta-mãe dos arquivos escolhidos; pasta usada vira a principal sugestão.
+- `DirEntryParsingTest` (5): parsing defensivo do `/contents` (nulls, blanks, fallbacks);
+- `FolderBrowserTest` (7): popup lista pastas reais e filtra arquivos; navegação por linha atualiza breadcrumbs; crumb volta à raiz; pasta vazia mostra estado próprio; New folder anexa ao caminho (inclusive nome aninhado e sanitização de `..`); Choose grava o caminho no campo e confirma na status line; sem repo selecionado → toast, sem popup — tudo via **MockWebServer** no caminho HTTP real do `GitHubClient`;
+- `AccountSwitchCardResetTest` (3): troca de conta reseta o card e preserva arquivos; qualquer connect manual reseta; auto-connect pós-rotação preserva a seleção.
 
 ## Notas
 
-- **versionCode 15, versionName 0.2.9** — instala por cima da 0.2.8 (mesma chave).
-- Arquitetura 0.2.8 intacta: o push continua no `PushRunner` (escopo de app) com o foreground service mínimo — nada da linha 0.3.x voltou (sem fila, sem retry, sem histórico persistente).
-- O comportamento do push em si não mudou: mesmo motor, mesmo formato de commit (título + descrição), mesmo fluxo.
+- **versionCode 16, versionName 0.3.0** — instala por cima da 0.2.9 (mesma chave).
+- Nova dependência: `androidx.recyclerview:recyclerview:1.3.2` (a lista do Explorer).
+- Arquitetura intacta: push continua no `PushRunner` (escopo de app) + foreground service; o Explorer é uma classe isolada (`browser/FolderBrowser.kt`) que só lê a API de contents — nenhum caminho de push foi tocado.
+- Cores do popup seguem os tokens JornalWeb zinc (dia/noite) do design system do app.

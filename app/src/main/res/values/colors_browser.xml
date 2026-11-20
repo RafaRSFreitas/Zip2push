@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v0.3.0 target-folder Explorer: colours follow the JornalWeb zinc
+     tokens (values/colors_jw.xml, values-night/colors_jw.xml). -->
+<resources>
+    <!-- Breadcrumb crumbs (tappable) and separators. -->
+    <color name="browser_crumb">#737373</color>            <!-- zinc-500 -->
+    <color name="browser_crumb_current">#0A0A0A</color>    <!-- foreground -->
+    <color name="browser_folder_icon">#737373</color>      <!-- zinc-500 -->
+    <color name="browser_row_text">#0A0A0A</color>         <!-- foreground -->
+    <color name="browser_new_folder">#171717</color>       <!-- primary -->
+</resources>

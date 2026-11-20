@@ -30,6 +30,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.zippush.app.browser.FolderBrowser
 import com.zippush.app.engine.UploadEngine
 import com.zippush.app.net.GitHubClient
 import com.zippush.app.push.PushRunner
@@ -104,6 +105,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var commitBodyInput: TextInputEditText
     private lateinit var commitExpandBtn: MaterialButton
     private lateinit var commitCollapseBtn: MaterialButton
+    private lateinit var targetDirLayout: TextInputLayout
 
     // ------------------------------------------------------------------ state
     private lateinit var vault: TokenVault
@@ -183,9 +185,15 @@ class MainActivity : AppCompatActivity() {
      * Test seam for the push-flow tests: connect a REAL client pointed
      * at a test server (MockWebServer) and load the repo list through
      * the real HTTP path — the success path of [connectWithToken],
-     * minus the vault write.
+     * minus the vault write. [asAccountSwitch] mirrors the card reset a
+     * real non-auto connect performs (v0.3.0).
      */
-    internal fun connectWithBaseUrlForTest(token: String, baseUrl: String) {
+    internal fun connectWithBaseUrlForTest(
+        token: String,
+        baseUrl: String,
+        asAccountSwitch: Boolean = false
+    ) {
+        if (asAccountSwitch) resetPushCardForAccountChange()
         val c = GitHubClient(token, baseUrl)
         client = c
         engine = UploadEngine(c)
@@ -255,6 +263,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         alive = false
         PushRunner.removeObserver(pushObserver)
+        folderBrowser?.dismiss()
         scope.cancel()
         super.onDestroy()
     }
@@ -338,6 +347,7 @@ class MainActivity : AppCompatActivity() {
         commitBodyInput = findViewById(R.id.commitBodyInput)
         commitExpandBtn = findViewById(R.id.commitExpandBtn)
         commitCollapseBtn = findViewById(R.id.commitCollapseBtn)
+        targetDirLayout = findViewById(R.id.targetDirLayout)
 
         // Enforce EXACT equality of the Files / Folder buttons. LinearLayout
         // weight rounding can differ by a pixel on odd-width rows; after
@@ -401,6 +411,11 @@ class MainActivity : AppCompatActivity() {
                 null -> Unit
             }
         }
+
+        // v0.3.0: the folder icon on the target-folder field opens the
+        // repository folder Explorer (real folders of the selected
+        // repo/branch, breadcrumbs, new-folder action).
+        targetDirLayout.setEndIconOnClickListener { openFolderBrowser() }
 
         zipBtn.setOnClickListener {
             try {
@@ -870,8 +885,33 @@ class MainActivity : AppCompatActivity() {
         }
         vault.setActiveLogin(login)
         // Switching accounts keeps the picked files — the selection is
-        // account-independent; only repo access changes.
+        // account-independent; only repo access changes. The rest of the
+        // "Choose what to push" card IS account-bound: another account
+        // has other repos, branches and folders, so the selections made
+        // for the previous login must not survive the switch (v0.3.0).
+        resetPushCardForAccountChange()
         connectWithToken(token)
+    }
+
+    /**
+     * Clears the account-bound parts of the "Choose what to push" card:
+     * repository, branch, target folder and the previous push's View-on-
+     * GitHub button. Called when the ACTIVE ACCOUNT changes (switch or
+     * fresh connect of a different login) — the card then rebuilds
+     * itself from the new account's repositories.
+     */
+    private fun resetPushCardForAccountChange() {
+        selectedRepo = null
+        selectedBranch = null
+        branches.clear()
+        branchItems.clear()
+        repoDropdown.setText("", false)
+        branchDropdown.setText("", false)
+        targetDirInput.setText("")
+        (repoDropdown.adapter as? ArrayAdapter<*>)?.clear()
+        (branchDropdown.adapter as? ArrayAdapter<*>)?.clear()
+        viewRepoBtn.visibility = View.GONE
+        lastCommitUrl = null
     }
 
     /** Clears the connection state back to "no account". */
@@ -913,6 +953,10 @@ class MainActivity : AppCompatActivity() {
         // needs to see "Pushed ✓ …". User-initiated connects clear it —
         // the user just started a new, more important flow (v0.2.9).
         if (!auto) holdDoneResult = null
+        // v0.3.0: connecting (including the auto-connect of a DIFFERENT
+        // saved account) refreshes the card — the repo list that lands
+        // right after belongs to the new account. The picked files stay.
+        if (!auto) resetPushCardForAccountChange()
         setBusy(true)
         setStatus("Verifying token…", StatusKind.PROGRESS)
         scope.launch {
@@ -1315,6 +1359,86 @@ class MainActivity : AppCompatActivity() {
     internal fun targetDirSuggestionsForTest(): List<String> {
         val ad = targetDirInput.adapter as? ArrayAdapter<*>
         return (0 until (ad?.count ?: 0)).map { ad?.getItem(it)?.toString() ?: "" }
+    }
+
+    // ------------------------------------------------- folder explorer (v0.3.0)
+
+    /**
+     * The popup currently open, if any (kept so a rotation dismisses it
+     * instead of leaking a dialog with a dead activity).
+     */
+    private var folderBrowser: FolderBrowser? = null
+
+    /** Test hook: the paths reported by the last Explorer result. */
+    internal var lastBrowserSelectionForTest: String? = null
+
+    /**
+     * Opens the target-folder Explorer on the REAL folders of the
+     * selected repository + branch. The selection lands in the field as
+     * plain text (what the push consumes); dismissing keeps whatever was
+     * there before.
+     */
+    internal fun openFolderBrowser() {
+        val repo = selectedRepo ?: run {
+            Toast.makeText(this, getString(R.string.browser_need_repo), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val branch = selectedBranch?.name
+            ?: repo.defaultBranch.takeIf { it.isNotBlank() }
+            ?: "main"
+        val client = client ?: return
+        val startPath = targetDirInput.text?.toString()?.trim().orEmpty()
+        val browser = FolderBrowser(this, client, scope)
+        folderBrowser = browser
+        browser.show(repo, branch, startPath) { result ->
+            folderBrowser = null
+            when (result) {
+                is FolderBrowser.Result.Selected -> {
+                    targetDirInput.setText(result.path)
+                    refreshTargetDirSuggestions()
+                    lastBrowserSelectionForTest = result.path
+                    setStatus(
+                        if (result.path.isEmpty())
+                            getString(R.string.browser_selected_root)
+                        else getString(R.string.browser_selected_folder, result.path),
+                        StatusKind.INFO
+                    )
+                }
+                FolderBrowser.Result.Cancelled -> Unit
+            }
+        }
+    }
+
+    /** Test hook: open the Explorer. */
+    internal fun openFolderBrowserForTest() = openFolderBrowser()
+
+    /** Test hook: dismiss the Explorer programmatically. */
+    internal fun dismissFolderBrowserForTest() { folderBrowser?.dismiss() }
+
+    /** Test hook: the Explorer's current path (null when closed). */
+    internal fun folderBrowserPathForTest(): String? = folderBrowser?.currentPathForTest()
+
+    /** Test hook: the Explorer's visible row labels (null when closed). */
+    internal fun folderBrowserRowsForTest(): List<String>? = folderBrowser?.rowLabelsForTest()
+
+    /** Test hook: the Explorer's breadcrumb labels (null when closed). */
+    internal fun folderBrowserCrumbsForTest(): List<String>? = folderBrowser?.breadcrumbLabelsForTest()
+
+    /** Test hook: tap a browser row by position (folders first, action last). */
+    internal fun tapBrowserRowForTest(position: Int) { folderBrowser?.tapRowForTest(position) }
+
+    /** Test hook: tap a breadcrumb crumb by index (repo crumb = 0). */
+    internal fun tapBrowserCrumbForTest(index: Int) { folderBrowser?.tapBreadcrumbForTest(index) }
+
+    /** Test hook: confirm the current browser folder (choose action). */
+    internal fun chooseInFolderBrowserForTest() { folderBrowser?.chooseForTest() }
+
+    /**
+     * Test hook: run the new-folder flow with [name] as if typed in the
+     * dialog (validates the same path-building logic as the UI).
+     */
+    internal fun createFolderInBrowserForTest(name: String) {
+        folderBrowser?.createFolderForTest(name)
     }
 
     /**

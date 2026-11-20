@@ -112,4 +112,18 @@
     <!-- 2.1 foreground service -->
     <!-- 2.10 accent -->
     <!-- 2.9 conflict -->
+
+    <!-- ======================= v0.3.0 target-folder Explorer ======================= -->
+    <string name="browser_title">Choose target folder</string>
+    <string name="browser_subtitle">Folders of the selected repository and branch. Files are hidden — this picks a destination.</string>
+    <string name="browser_new_folder">New folder…</string>
+    <string name="browser_new_folder_title">New folder</string>
+    <string name="browser_new_folder_hint">Folder name (e.g. assignments/week4)</string>
+    <string name="browser_new_folder_helper">The folder is created on GitHub when your first push lands under it.</string>
+    <string name="browser_choose_folder">Choose this folder</string>
+    <string name="browser_empty_folder">No subfolders here. You can still choose this folder or create a new one.</string>
+    <string name="browser_load_error">Could not load this folder:\n%1$s</string>
+    <string name="browser_need_repo">Pick a repository and branch first</string>
+    <string name="browser_selected_root">Target folder set to the repository root.</string>
+    <string name="browser_selected_folder">Target folder set to %1$s</string>
 </resources>

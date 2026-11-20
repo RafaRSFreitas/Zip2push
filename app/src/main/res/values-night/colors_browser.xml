@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="browser_crumb">#A1A1A1</color>            <!-- zinc-400 -->
+    <color name="browser_crumb_current">#FAFAFA</color>    <!-- foreground -->
+    <color name="browser_folder_icon">#A1A1A1</color>      <!-- zinc-400 -->
+    <color name="browser_row_text">#FAFAFA</color>         <!-- foreground -->
+    <color name="browser_new_folder">#FAFAFA</color>       <!-- primary_foreground-ish -->
+</resources>
