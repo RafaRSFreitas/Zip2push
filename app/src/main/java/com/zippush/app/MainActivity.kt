@@ -76,6 +76,13 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_THEME_MODE = "theme_mode"
         private const val STATE_BACKDATE_EPOCH = "backdate_epoch_ms"
 
+        // v0.4.0 rotation persistence of the full-screen folder picker:
+        // whether it was open, the path it showed and whether that path
+        // is local-only (folder created inline, absent on GitHub).
+        private const val STATE_BROWSER_OPEN = "browser_open"
+        private const val STATE_BROWSER_PATH = "browser_path"
+        private const val STATE_BROWSER_PATH_LOCAL = "browser_path_local"
+
         /**
          * v0.4.0: MIME types the "Add Rar/Zip/Tar" picker offers — ONLY the
          * three archive formats the button accepts (gzip is gone since
@@ -292,6 +299,14 @@ class MainActivity : AppCompatActivity() {
         // Preserve the chosen backdate across rotation / process death so
         // it is not silently lost mid-flow.
         commitAuthorDate?.let { outState.putLong(STATE_BACKDATE_EPOCH, it.timeInMillis) }
+        // v0.4.0: remember the folder-picker position so a rotation reopens
+        // it on the same folder after the auto-connect. Only saved while
+        // the picker is OPEN — closed stays closed (no keys = false).
+        folderBrowser?.let { browser ->
+            outState.putBoolean(STATE_BROWSER_OPEN, true)
+            outState.putString(STATE_BROWSER_PATH, browser.currentPathValue())
+            outState.putBoolean(STATE_BROWSER_PATH_LOCAL, browser.isLocalPath())
+        }
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
@@ -341,6 +356,17 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // v0.4.0: rotation persistence of the folder picker — read the
+        // saved open/path/local state before anything can clear it. The
+        // picker itself reopens only AFTER token/repo/branch are restored
+        // (see [maybeReopenPendingBrowser]).
+        pendingBrowserReopen =
+            savedInstanceState?.getBoolean(STATE_BROWSER_OPEN) == true
+        pendingBrowserPath =
+            savedInstanceState?.getString(STATE_BROWSER_PATH).orEmpty()
+        pendingBrowserPathLocal =
+            savedInstanceState?.getBoolean(STATE_BROWSER_PATH_LOCAL) == true
 
         statusIcon = findViewById(R.id.statusIcon)
         statusText = findViewById(R.id.statusText)
@@ -434,6 +460,8 @@ class MainActivity : AppCompatActivity() {
         // v0.3.0: the folder icon on the target-folder field opens the
         // repository folder Explorer (real folders of the selected
         // repo/branch, breadcrumbs, level-up, new-folder action).
+        // v0.4.0: the Explorer is a FULL-SCREEN picker (no dialog card)
+        // that is restored on rotation (same folder, remote or local).
         targetDirLayout.setEndIconOnClickListener { openFolderBrowser() }
 
         zipBtn.setOnClickListener {
@@ -487,6 +515,9 @@ class MainActivity : AppCompatActivity() {
         if (token != null) {
             connectWithToken(token, auto = true)
         } else {
+            // Nothing to reconnect with: a pending picker reopen can never
+            // fire, so drop it (the app stays usable without the picker).
+            clearPendingBrowserReopen()
             updateAccountButton()
             setStatus(getString(R.string.status_ready), StatusKind.INFO)
         }
@@ -988,6 +1019,9 @@ class MainActivity : AppCompatActivity() {
      * itself from the new account's repositories.
      */
     private fun resetPushCardForAccountChange() {
+        // An account change invalidates a pending picker reopen (v0.4.0):
+        // the new account may not even see the same repository.
+        clearPendingBrowserReopen()
         selectedRepo = null
         selectedBranch = null
         branches.clear()
@@ -1003,6 +1037,8 @@ class MainActivity : AppCompatActivity() {
 
     /** Clears the connection state back to "no account". */
     private fun disconnect() {
+        // No account = nothing to restore the picker against (v0.4.0).
+        clearPendingBrowserReopen()
         client = null
         engine = null
         repos.clear()
@@ -1060,6 +1096,10 @@ class MainActivity : AppCompatActivity() {
                 is GitHubClient.ApiResult.Error -> {
                     setBusy(false)
                     setStatus(getString(R.string.token_error, r.message), StatusKind.ERROR)
+                    // v0.4.0: a failed AUTO-connect (rotation) must not
+                    // reopen the picker — nothing was restored to open it
+                    // against. Manual connects never had a pending reopen.
+                    if (auto) clearPendingBrowserReopen()
                     // Re-open the add-account dialog so the user can fix the token
                     // (only when they explicitly initiated the connect).
                     if (reopenDialogOnFailure) showAddAccountDialog()
@@ -1101,6 +1141,14 @@ class MainActivity : AppCompatActivity() {
                         } else if (selectedBranch != null) {
                             branchDropdown.setText(selectedBranch!!.name, false)
                         }
+                        // v0.4.0: token/repo/branch are restored now — the
+                        // picker saved before the rotation may reopen.
+                        maybeReopenPendingBrowser()
+                    } else {
+                        // The saved repo no longer exists / is not
+                        // accessible: a pending picker reopen must not
+                        // fire (v0.4.0).
+                        clearPendingBrowserReopen()
                     }
                     if (selectedRepo == null) {
                         setStatus(
@@ -1127,6 +1175,9 @@ class MainActivity : AppCompatActivity() {
             is GitHubClient.ApiResult.Error -> {
                 setBusy(false)
                 setStatus(getString(R.string.repos_error, fetched.message), StatusKind.ERROR)
+                // v0.4.0: the repo list never landed — the picker must not
+                // reopen without it.
+                clearPendingBrowserReopen()
             }
         }
     }
@@ -1503,21 +1554,38 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------- folder explorer (v0.3.0)
 
     /**
-     * The popup currently open, if any (kept so a rotation dismisses it
+     * The picker currently open, if any (kept so a rotation dismisses it
      * instead of leaking a dialog with a dead activity).
      */
     private var folderBrowser: FolderBrowser? = null
+
+    /**
+     * v0.4.0 rotation persistence: state read in onCreate, consumed by
+     * [maybeReopenPendingBrowser] once token/repo/branch are restored.
+     * A manual open (the field icon) always cancels a pending reopen.
+     */
+    private var pendingBrowserReopen = false
+    private var pendingBrowserPath = ""
+    private var pendingBrowserPathLocal = false
 
     /** Test hook: the paths reported by the last Explorer result. */
     internal var lastBrowserSelectionForTest: String? = null
 
     /**
-     * Opens the target-folder Explorer on the REAL folders of the
-     * selected repository + branch. The selection lands in the field as
-     * plain text (what the push consumes); dismissing keeps whatever was
-     * there before.
+     * Opens the target-folder Explorer (v0.4.0 full-screen picker) on the
+     * REAL folders of the selected repository + branch. The selection
+     * lands in the field as plain text (what the push consumes);
+     * dismissing keeps whatever was there before. [startPathOverride] +
+     * [startPathIsLocal] drive the rotation restore: the picker reopens
+     * at a specific path (skipping the fetch when the path is local).
      */
-    internal fun openFolderBrowser() {
+    internal fun openFolderBrowser(
+        startPathOverride: String? = null,
+        startPathIsLocal: Boolean = false
+    ) {
+        // A manual open always cancels a pending rotation restore.
+        clearPendingBrowserReopen()
+
         val repo = selectedRepo ?: run {
             Toast.makeText(this, getString(R.string.browser_need_repo), Toast.LENGTH_SHORT).show()
             return
@@ -1526,11 +1594,20 @@ class MainActivity : AppCompatActivity() {
             ?: repo.defaultBranch.takeIf { it.isNotBlank() }
             ?: "main"
         val client = client ?: return
-        val startPath = targetDirInput.text?.toString()?.trim().orEmpty()
+        val startPath = startPathOverride
+            ?: targetDirInput.text?.toString()?.trim().orEmpty()
+
         val browser = FolderBrowser(this, client, scope)
         folderBrowser = browser
-        browser.show(repo, branch, startPath) { result ->
-            folderBrowser = null
+        browser.show(
+            repo = repo,
+            branch = branch,
+            startPath = startPath,
+            startPathIsLocal = startPathIsLocal
+        ) { result ->
+            // Only the CURRENT picker may clear the reference: a stale
+            // dismiss of an old dialog must not null out a newer one.
+            if (folderBrowser === browser) folderBrowser = null
             when (result) {
                 is FolderBrowser.Result.Selected -> {
                     targetDirInput.setText(result.path)
@@ -1546,6 +1623,30 @@ class MainActivity : AppCompatActivity() {
                 FolderBrowser.Result.Cancelled -> Unit
             }
         }
+    }
+
+    /**
+     * v0.4.0: reopens the folder picker saved before a rotation — called
+     * from [loadRepos] ONLY after the repo was re-matched from the fresh
+     * list (client + selectedRepo both ready by then). Runs once; any
+     * failure path clears the pending state instead.
+     */
+    private fun maybeReopenPendingBrowser() {
+        if (!pendingBrowserReopen) return
+        if (selectedRepo == null) return
+        if (client == null) return
+
+        val path = pendingBrowserPath
+        val local = pendingBrowserPathLocal
+        clearPendingBrowserReopen()
+        openFolderBrowser(startPathOverride = path, startPathIsLocal = local)
+    }
+
+    /** v0.4.0: drops the pending picker-reopen state. */
+    private fun clearPendingBrowserReopen() {
+        pendingBrowserReopen = false
+        pendingBrowserPath = ""
+        pendingBrowserPathLocal = false
     }
 
     /** Test hook: open the Explorer. */
@@ -1594,6 +1695,29 @@ class MainActivity : AppCompatActivity() {
     /** Test hook: whether the Explorer is fetching a folder listing. */
     internal fun folderBrowserLoadingForTest(): Boolean =
         folderBrowser?.isLoadingForTest() ?: false
+
+    /** Test hook: whether the picker window is truly full-screen (v0.4.0). */
+    internal fun folderBrowserIsFullScreenForTest(): Boolean? =
+        folderBrowser?.isFullScreenForTest()
+
+    /** Test hook: whether the picker path is local-only (v0.4.0). */
+    internal fun folderBrowserIsLocalPathForTest(): Boolean? =
+        folderBrowser?.isLocalPath()
+
+    /**
+     * Test hook (v0.4.0): re-arm the pending picker reopen on a freshly
+     * created activity. The REAL flow reads this exact state from the
+     * saved instance bundle (onCreate) and consumes it after the
+     * auto-connect; the hook reproduces it for rotation tests because
+     * the vault cannot hold a token under Robolectric (Keystore is
+     * unavailable), so onCreate clears the pending state before the
+     * test's manual reconnect can run.
+     */
+    internal fun armBrowserReopenForTest(path: String, local: Boolean) {
+        pendingBrowserReopen = true
+        pendingBrowserPath = path
+        pendingBrowserPathLocal = local
+    }
 
     /**
      * Clear Selection: resets the whole form — picked files, repository,

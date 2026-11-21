@@ -10,6 +10,7 @@
     android:paddingEnd="20dp"
     android:paddingTop="12dp"
     android:paddingBottom="12dp"
+    android:minHeight="56dp"
     android:background="?attr/selectableItemBackground">
 
     <ImageView

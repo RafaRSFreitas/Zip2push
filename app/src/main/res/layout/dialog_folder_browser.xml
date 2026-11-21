@@ -1,14 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Target-folder Explorer popup (v0.3.0): breadcrumb bar on top, the
-     subfolder list of the current repo folder in the middle (folders
-     only — this popup picks a destination), and a "Choose this folder"
-     action at the bottom. Loading / empty / error states are inline. -->
+<!-- Target-folder Explorer full-screen picker (v0.4.0): a fixed top bar
+     (close button + title + owner/repo · branch subtitle), the existing
+     navigation row (level-up + breadcrumbs), the subfolder list of the
+     current repo folder taking ALL remaining space (folders only — this
+     picker picks a destination), and a fixed "Use this folder" footer.
+     Loading / empty / error states are inline. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="match_parent"
     android:orientation="vertical"
-    android:paddingTop="8dp">
+    android:background="?android:attr/colorBackground">
+
+    <!-- Top bar: close (X) + title + dynamic repo/branch subtitle. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
+
+        <ImageButton
+            android:id="@+id/browserCloseBtn"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_close"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/browser_close_desc"
+            app:tint="?attr/colorOnSurfaceVariant" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/browser_title"
+                android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/browserSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/browser_subtitle"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+    </LinearLayout>
 
     <!-- Navigation row: level-up button + breadcrumb trail. The up
          affordance is always in the same place (v0.3.1) — one tap
@@ -50,31 +99,21 @@
         </HorizontalScrollView>
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/browserSubtitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
-        android:paddingTop="2dp"
-        android:paddingBottom="4dp"
-        android:text="@string/browser_subtitle"
-        android:textAppearance="?attr/textAppearanceBodySmall"
-        android:textColor="?attr/colorOnSurfaceVariant" />
-
+    <!-- List area: takes ALL the remaining space (no fixed height), so
+         the picker fills the screen in portrait and landscape alike. -->
     <FrameLayout
+        android:id="@+id/browserContent"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-        <!-- Folder rows (RecyclerView needs a bounded height inside a
-             dialog: 320dp shows ~7 rows and keeps the dialog compact.) -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/browserList"
             android:layout_width="match_parent"
-            android:layout_height="320dp"
+            android:layout_height="match_parent"
             android:clipToPadding="false"
             android:paddingTop="4dp"
-            android:paddingBottom="4dp"
+            android:paddingBottom="8dp"
             android:overScrollMode="never" />
 
         <com.google.android.material.progressindicator.CircularProgressIndicator
@@ -91,7 +130,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:gravity="center"
-            android:padding="24dp"
+            android:padding="32dp"
             android:text="@string/browser_empty_folder"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurfaceVariant"
@@ -103,21 +142,28 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:gravity="center"
-            android:padding="24dp"
+            android:padding="32dp"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorError"
             android:visibility="gone" />
     </FrameLayout>
+
+    <!-- Fixed footer: subtle divider + the confirm action, always
+         visible; the list is the only part that shrinks. -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/jw_border" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/browserChooseBtn"
         style="@style/Widget.ZipPush.Button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
-        android:layout_marginEnd="24dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="4dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="16dp"
         android:text="@string/browser_choose_folder"
         app:icon="@drawable/ic_check" />
 </LinearLayout>

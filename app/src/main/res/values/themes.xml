@@ -168,6 +168,24 @@
         <item name="colorSurface">@color/jw_popover</item>
     </style>
 
+    <!-- v0.4.0 target-folder picker: a FULL-SCREEN android.app.Dialog that
+         still inherits every token of the app theme (Geist font, zinc
+         colours, button styles) — NOT a Material dialog theme, which
+         would restyle it as a floating card with default fonts. Non-
+         floating + no dim + opaque window background = it reads as a
+         screen, not a card. No light/dark-specific attributes here, so
+         the single definition follows the parent's DayNight variants. -->
+    <style name="Theme.ZipPush.FullScreenDialog" parent="Theme.ZipPush">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowBackground">@color/jw_background</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowCloseOnTouchOutside">false</item>
+    </style>
+
     <!-- Dropdown / popup lists -->
     <style name="Widget.ZipPush.PopupMenu" parent="Widget.Material3.PopupMenu.ContextMenu">
         <item name="android:popupBackground">@drawable/bg_popup</item>

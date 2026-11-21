@@ -119,11 +119,14 @@
     <!-- ================== v0.3.0 target-folder Explorer ================== -->
     <string name="browser_title">Choose target folder</string>
     <string name="browser_subtitle">Folders of the selected repository and branch.</string>
+    <!-- v0.4.0 full-screen picker: dynamic top-bar subtitle + close action. -->
+    <string name="browser_subtitle_repo">%1$s · %2$s</string>
+    <string name="browser_close_desc">Close folder picker</string>
     <string name="browser_new_folder">New folder…</string>
     <string name="browser_new_folder_title">New folder</string>
     <string name="browser_new_folder_hint">Folder name (e.g. assignments/week4)</string>
     <string name="browser_new_folder_helper">The folder is created on GitHub when your first push lands under it.</string>
-    <string name="browser_choose_folder">Choose this folder</string>
+    <string name="browser_choose_folder">Use this folder</string>
     <string name="browser_empty_folder">No subfolders here. You can still choose this folder or create a new one.</string>
     <string name="browser_load_error">Could not load this folder:\n%1$s</string>
     <string name="browser_need_repo">Pick a repository and branch first</string>

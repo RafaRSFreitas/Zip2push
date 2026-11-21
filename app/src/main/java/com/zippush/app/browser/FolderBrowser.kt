@@ -1,9 +1,14 @@
 package com.zippush.app.browser
 
+import android.app.Dialog
 import android.content.Context
+import android.graphics.drawable.ColorDrawable
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -23,22 +28,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The target-folder Explorer (v0.3.0) — a Material dialog that browses
- * the REAL folders of the selected repository/branch, GitHub-style:
+ * The target-folder Explorer (v0.3.0; full-screen since v0.4.0) — a
+ * full-screen picker that browses the REAL folders of the selected
+ * repository/branch, GitHub-style:
  *
+ *  - fixed top bar: close (X) + "Choose target folder" + the
+ *    owner/repo · branch subtitle;
  *  - breadcrumb bar ("repo / src / android") — tap any crumb to jump;
  *  - one-line list of the subfolders of the current folder (files are
- *    filtered out: this popup picks a destination, not a file);
+ *    filtered out: this picker picks a destination, not a file);
  *  - "New folder" row to create a folder name inline (no commit is
  *    made — folders materialize on GitHub when the first file lands
  *    under them);
- *  - "Choose this folder" confirms and "…" keeps browsing.
+ *  - "Use this folder" confirms and "…" keeps browsing.
  *
  * Navigation model: [navigateTo] fetches one directory page per hop
  * (GET /repos/…/contents?ref=…), exactly what GitHub's own file browser
  * does — no full recursive tree is downloaded for a repo the user just
  * wants to drop files into. The up affordance is the "repo" crumb (and
- * the system back gesture, which closes the dialog).
+ * the system back gesture, which closes the picker).
  *
  * UI patterns follow the Explorer/breadcrumb conventions: current
  * location always visible (NN/g breadcrumbs guideline), single-tap to
@@ -55,7 +63,7 @@ class FolderBrowser(
     sealed class Result {
         /** The user confirmed a folder ("" = repository root). */
         data class Selected(val path: String) : Result()
-        /** The user dismissed the popup without choosing. */
+        /** The user dismissed the picker without choosing. */
         object Cancelled : Result()
     }
 
@@ -75,6 +83,31 @@ class FolderBrowser(
     /** Path of the folder currently displayed ("" = repo root). */
     private var currentPath: String = ""
 
+    /**
+     * v0.4.0: true when [currentPath] does NOT exist on GitHub yet (a
+     * folder created inline via "New folder", or restored as local after
+     * a rotation). A local path must never be listed — the fetch would
+     * 404 — so reopens restore it without any network call.
+     */
+    private var currentPathIsLocal = false
+
+    /**
+     * v0.4.0: exactly-one-result guard. The dismiss listener delivers
+     * [Result.Cancelled] and the choose button delivers
+     * [Result.Selected]; dismissing right after choosing must NOT fire a
+     * second (wrong) result. [deliver] passes the first result through
+     * and ignores everything after it.
+     */
+    private var resultCallback: ((Result) -> Unit)? = null
+    private var resultDelivered = false
+
+    private fun deliver(result: Result) {
+        if (resultDelivered) return
+        resultDelivered = true
+        resultCallback?.invoke(result)
+        resultCallback = null
+    }
+
     /** Rows currently displayed: the repo's subfolders + the new-folder action. */
     private val rows = mutableListOf<Row>()
 
@@ -93,17 +126,23 @@ class FolderBrowser(
     // ------------------------------------------------------------- lifecycle
 
     /**
-     * Opens the browser at [startPath] (repository root when blank) and
-     * reports the outcome to [onResult] on the caller's thread (the
-     * scope's). Re-opens are safe: a previous dialog is dismissed first.
+     * Opens the full-screen picker at [startPath] (repository root when
+     * blank) and reports the outcome to [onResult] on the caller's thread
+     * (the scope's). Re-opens are safe: a previous picker is dismissed
+     * first. With [startPathIsLocal] the start path is restored LOCALLY
+     * (no network call) — used after a rotation to come back to a folder
+     * created inline that GitHub does not know about yet.
      */
     fun show(
         repo: GitHubClient.Repo,
         branch: String,
         startPath: String,
+        startPathIsLocal: Boolean = false,
         onResult: (Result) -> Unit
     ) {
         dialog?.dismiss()
+        resultDelivered = false
+        resultCallback = onResult
         currentRepoName = repo.name
         val view = LayoutInflater.from(context).inflate(R.layout.dialog_folder_browser, null)
         breadcrumbContainer = view.findViewById(R.id.browserBreadcrumbs)
@@ -124,24 +163,72 @@ class FolderBrowser(
         // root there is no parent, so the button disables itself.
         upBtn.setOnClickListener { goUp() }
 
+        // v0.4.0: the fixed top bar — X closes without touching the
+        // field; the subtitle names owner/repo · branch.
+        val closeBtn = view.findViewById<ImageButton>(R.id.browserCloseBtn)
+        view.findViewById<TextView>(R.id.browserSubtitle).text =
+            context.getString(R.string.browser_subtitle_repo, repo.fullName, branch)
+
         chooseBtn.setOnClickListener {
-            onResult(Result.Selected(currentPath))
+            deliver(Result.Selected(currentPath))
             dialog?.dismiss()
         }
 
-        dialog = MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.browser_title)
-            .setView(view)
-            .create()
-        dialog?.setOnDismissListener {
+        // v0.4.0: an android.app.Dialog styled by Theme.ZipPush.FullScreenDialog
+        // (non-floating, no dim, app theme) — the native-feeling full-screen
+        // picker, NOT a MaterialAlertDialog card.
+        val d = Dialog(context, R.style.Theme_ZipPush_FullScreenDialog)
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        d.setContentView(view)
+        d.setCancelable(true)
+        d.setCanceledOnTouchOutside(false)
+        d.setOnDismissListener {
+            // Back, the X and programmatic dismissal all land here: stop
+            // the in-flight listing and report the cancellation ONCE
+            // (deliver() also suppresses the double report when the user
+            // had just confirmed a folder).
             loadJob?.cancel()
-            onResult(Result.Cancelled)
+            deliver(Result.Cancelled)
         }
-        dialog?.show()
-        navigateTo(repo, branch, startPath)
+        d.show()
+        // Window tuning comes after show() (the window object is created
+        // by show). setBackgroundDrawable is redundant with the theme but
+        // guarantees no rounded dialog backdrop sneaks in.
+        d.window?.apply {
+            setBackgroundDrawable(ColorDrawable(context.getColor(R.color.jw_background)))
+            setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
+            setGravity(Gravity.FILL)
+            setDimAmount(0f)
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        dialog = d
+        closeBtn.setOnClickListener { d.dismiss() }
+
+        if (startPathIsLocal && startPath.isNotBlank()) {
+            // Restore a LOCAL path (folder created inline, not on GitHub
+            // yet) without any fetch: a listing would 404. Same state the
+            // user left: path in the breadcrumbs, "New folder…" row,
+            // confirm enabled.
+            currentPath = startPath.trim().trim('/').replace(Regex("/+"), "/")
+            currentPathIsLocal = true
+            currentRepoName = repo.name
+            renderBreadcrumbs(repo.name)
+            refreshUpButton()
+            setLoading(false)
+            rows.clear()
+            rows.add(Row.NewFolder)
+            renderList()
+        } else {
+            currentPathIsLocal = false
+            navigateTo(repo, branch, startPath)
+        }
     }
 
-    /** Dismisses the popup programmatically (e.g. activity destroyed). */
+    /** Dismisses the picker programmatically (e.g. activity destroyed). */
     fun dismiss() {
         dialog?.dismiss()
     }
@@ -157,6 +244,9 @@ class FolderBrowser(
         loadJob?.cancel()
         val clean = path.trim().trim('/').replace(Regex("/+"), "/")
         currentPath = clean
+        // Navigation always targets a REAL GitHub folder — clear the
+        // local flag set by a previous inline folder creation.
+        currentPathIsLocal = false
         currentRepoName = repo.name
         renderBreadcrumbs(repo.name)
         refreshUpButton()
@@ -395,6 +485,9 @@ class FolderBrowser(
         if (rel.isEmpty()) return
         val newPath = if (currentPath.isEmpty()) rel else "$currentPath/$rel"
         currentPath = newPath
+        // The folder does not exist on GitHub yet: mark the path local
+        // so a rotation restores it WITHOUT a listing call (v0.4.0).
+        currentPathIsLocal = true
         rows.clear()
         rows.add(Row.NewFolder)
         renderBreadcrumbs(currentRepoName ?: return)
@@ -405,6 +498,12 @@ class FolderBrowser(
     /** Repo display name of the browser session (for breadcrumbs). */
     private var currentRepoName: String? = null
 
+    /** v0.4.0: whether [currentPath] is local-only (not on GitHub yet). */
+    fun isLocalPath(): Boolean = currentPathIsLocal
+
+    /** v0.4.0: the path the picker is currently showing ("" = root). */
+    fun currentPathValue(): String = currentPath
+
     /** Drops empty segments, "." and ".." from a typed folder name. */
     private fun sanitizeFolderName(name: String): String = name.split('/')
         .map { it.trim() }
@@ -413,8 +512,20 @@ class FolderBrowser(
 
     // ------------------------------------------------------------- test seams
 
-    /** Test seam: current folder path shown by the popup. */
-    internal fun currentPathForTest(): String = currentPath
+    /** Test seam: current folder path shown by the picker. */
+    internal fun currentPathForTest(): String = currentPathValue()
+
+    /** Test seam: whether the current path is local-only (no fetch). */
+    internal fun isLocalPathForTest(): Boolean = isLocalPath()
+
+    /** Test seam: whether the picker window is truly full-screen. */
+    internal fun isFullScreenForTest(): Boolean {
+        val w = dialog?.window ?: return false
+        val attrs = w.attributes
+        return attrs.width == ViewGroup.LayoutParams.MATCH_PARENT &&
+            attrs.height == ViewGroup.LayoutParams.MATCH_PARENT &&
+            (attrs.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND) == 0
+    }
 
     /** Test seam: labels of the rows currently displayed. */
     internal fun rowLabelsForTest(): List<String> = rows.map { it.toString() }
