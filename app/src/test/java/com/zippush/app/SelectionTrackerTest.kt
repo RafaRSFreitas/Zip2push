@@ -9,8 +9,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Pure logic tests for the selection model backing Add ZIP / Add files /
- * Clear selection and the push snapshot.
+ * Pure logic tests for the selection model backing Add Rar/Zip/Tar /
+ * Add file / Clear selection and the push snapshot.
  */
 @RunWith(RobolectricTestRunner::class)
 class SelectionTrackerTest {

@@ -36,9 +36,10 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * v0.3.4: the "File" button — label, archive validation at pick time
- * (magic bytes, friendly toast for non-archives) and full pushes with
- * the newly supported formats (RAR5, tar.gz) through to History.
+ * v0.4.0: the "Add Rar/Zip/Tar" button — label, archive validation at
+ * pick time (magic bytes, friendly toast for anything that is not a
+ * plain RAR/ZIP/TAR — tar.gz included) and full pushes with the
+ * supported formats (RAR5, tar) through to History.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -125,15 +126,30 @@ class FileButtonArchiveTest {
         return gz.toByteArray()
     }
 
+    private fun tarBytes(): ByteArray {
+        // A minimal UNCOMPRESSED tar (one of the three formats the button
+        // accepts) with one file inside a single root folder.
+        val tar = ByteArrayOutputStream()
+        org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(tar).use { tos ->
+            val e = org.apache.commons.compress.archivers.tar.TarArchiveEntry("docs/readme.txt")
+            val payload = "from tar".toByteArray()
+            e.size = payload.size.toLong()
+            tos.putArchiveEntry(e)
+            tos.write(payload)
+            tos.closeArchiveEntry()
+        }
+        return tar.toByteArray()
+    }
+
     // ------------------------------------------------------------- the button
 
     @Test
-    fun `button is named File`() {
+    fun `button is named Add Rar-Zip-Tar`() {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             scenario.onActivity { a ->
                 val label = a.findViewById<Button>(R.id.zipBtn).text.toString()
-                assertEquals("File", label)
+                assertEquals("Add Rar/Zip/Tar", label)
             }
         } finally {
             scenario.close()
@@ -185,7 +201,7 @@ class FileButtonArchiveTest {
     }
 
     @Test
-    fun `picking a tar_gz archive is accepted and summarized as tar-dot-gz`() {
+    fun `picking a tar_gz archive is rejected - only Rar-Zip-Tar accepted`() {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             val uri = Uri.parse("content://robolectric/files/bundle.tgz")
@@ -194,9 +210,11 @@ class FileButtonArchiveTest {
             scenario.onActivity { a ->
                 a.onArchivePickedForTest(uri)
                 idle()
-                assertNotNull(a.tracker.zip)
-                val summary = a.findViewById<TextView>(R.id.selectionText).text.toString()
-                assertTrue("summary names tar.gz: $summary", summary.contains("tar.gz"))
+                assertNull("tar.gz must be rejected by the Rar/Zip/Tar button", a.tracker.zip)
+                val toast = ShadowToast.getTextOfLatestToast()
+                assertEquals(
+                    context.getString(R.string.toast_unsupported_archive), toast
+                )
             }
         } finally {
             scenario.close()
@@ -256,18 +274,18 @@ class FileButtonArchiveTest {
     }
 
     @Test
-    fun `a tar_gz archive pushes end to end`() {
+    fun `a plain tar archive pushes end to end`() {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             scenario.onActivity {
                 it.connectWithBaseUrlForTest("test-token", server.url("/").toString())
             }
-            val uri = Uri.parse("content://robolectric/files/bundle.tgz")
+            val uri = Uri.parse("content://robolectric/files/bundle.tar")
             Shadows.shadowOf(context.contentResolver)
-                .registerInputStream(uri, ByteArrayInputStream(tarGzBytes()))
+                .registerInputStream(uri, ByteArrayInputStream(tarBytes()))
             scenario.onActivity {
                 preparePush(it, uri)
-                it.setCommitMessageForTest("tar.gz upload")
+                it.setCommitMessageForTest("tar upload")
                 it.onPushClickedForTest()
             }
 

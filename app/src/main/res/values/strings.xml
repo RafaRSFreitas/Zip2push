@@ -33,7 +33,7 @@
     <string name="new_branch_dialog_hint">Branch name</string>
     <string name="create_branch_dialog_helper">New branch starts from the selected branch.</string>
     <string name="create">Create</string>
-    <string name="target_dir_hint">Target folder in the repo (optional)</string>
+    <string name="target_dir_hint">Target folder (optional)</string>
     <string name="target_dir_helper">Example: assignments/week3 — files land under this folder. Empty = repository root.</string>
     <string name="commit_message_hint">Commit message</string>
     <string name="backdate_title">Commit date &amp; time</string>
@@ -46,10 +46,12 @@
     <string name="backdate_cancel">Cancel</string>
     <string name="backdate_applied_status">Commit date set to %1$s — the commit will look out of order in history.</string>
     <string name="backdate_cleared_status">Commit date reset to now.</string>
+    <!-- v0.4.0: the top picker takes ONLY RAR/ZIP/TAR archives; every
+         other file (any type, several at once) goes through "Add file". -->
     <string name="add_zip">Add Rar/Zip/Tar</string>
     <string name="add_files">Add file</string>
     <string name="add_folder">Add folder</string>
-    <string name="toast_unsupported_archive">That file is not a RAR, ZIP or tar archive</string>
+    <string name="toast_unsupported_archive">Only RAR, ZIP and TAR archives are accepted here</string>
     <string name="folder_picked_summary">%1$d files from folder “%2$s”</string>
     <string name="folder_empty">No files found in the selected folder.</string>
     <string name="clear_selection">Clear selection</string>
@@ -58,13 +60,13 @@
     <!-- v0.2.9: short toast variants (tap-level feedback never touches the status bar) -->
     <string name="toast_push_in_progress">Push already in progress…</string>
     <string name="toast_pick_repo">Pick a repository first</string>
-    <string name="toast_pick_files">Pick an archive (Rar/Zip/Tar) or some files first</string>
+    <string name="toast_pick_files">Pick a Rar/Zip/Tar archive or files first</string>
     <!-- v0.2.8 foreground service: silent, low-importance, no prompt. -->
     <string name="push_notif_channel">Push in progress</string>
     <string name="push_notif_channel_desc">Shows while a push is uploading, so it keeps running when you leave the app.</string>
     <string name="push_notif_active">Pushing to GitHub…</string>
     <string name="pick_repo_first">Select a repository first</string>
-    <string name="pick_files_first">Pick an archive (Rar/Zip/Tar) or some files first</string>
+    <string name="pick_files_first">Pick an archive (ZIP/tar/RAR) or some files first</string>
     <string name="no_readable_files">No readable files found in the selection.</string>
     <string name="token_error">Token rejected: %1$s</string>
     <string name="connected_as">Connected as %1$s ✓ — loading repositories…</string>
@@ -92,17 +94,11 @@
     <string name="theme_switched_day">Day mode ✓</string>
     <string name="menu_about">About</string>
     <string name="menu_donations">Donations</string>
-    <string name="menu_history">History</string>
-    <string name="history_title">Push history</string>
-    <string name="history_empty">No pushes yet — your completed uploads will appear here.</string>
-    <string name="history_files_header">Files in this push</string>
-    <string name="history_view_commit">View on GitHub</string>
-    <string name="history_dialog_dismiss">Close</string>
     <string name="donations_coming_soon">Donations are coming soon. Thanks for your support!</string>
     <string name="about_title">About Zip2Push</string>
     <string name="about_version_label">Version</string>
     <string name="about_version_format">Version %1$s</string>
-    <string name="about_body">Zip2Push pushes ZIP archives, files and folders to any GitHub repository straight from your phone — no PC, no Git commands. Pick what to upload, choose a repo and branch, and it lands as one clean commit.</string>
+    <string name="about_body">Zip2Push pushes ZIP, tar and RAR archives, files and folders to any GitHub repository straight from your phone — no PC, no Git commands. Pick what to upload, choose a repo and branch, and it lands as one clean commit.</string>
     <string name="about_privacy_title">Privacy</string>
     <string name="about_privacy_body">Your Personal Access Token is stored encrypted on this device only and is sent exclusively to GitHub\'s own API. Nothing else is collected, tracked or shared.</string>
     <string name="about_oss_title">Open source</string>
@@ -119,4 +115,44 @@
     <!-- 2.1 foreground service -->
     <!-- 2.10 accent -->
     <!-- 2.9 conflict -->
+
+    <!-- ================== v0.3.0 target-folder Explorer ================== -->
+    <string name="browser_title">Choose target folder</string>
+    <string name="browser_subtitle">Folders of the selected repository and branch.</string>
+    <string name="browser_new_folder">New folder…</string>
+    <string name="browser_new_folder_title">New folder</string>
+    <string name="browser_new_folder_hint">Folder name (e.g. assignments/week4)</string>
+    <string name="browser_new_folder_helper">The folder is created on GitHub when your first push lands under it.</string>
+    <string name="browser_choose_folder">Choose this folder</string>
+    <string name="browser_empty_folder">No subfolders here. You can still choose this folder or create a new one.</string>
+    <string name="browser_load_error">Could not load this folder:\n%1$s</string>
+    <string name="browser_need_repo">Pick a repository and branch first</string>
+    <string name="browser_selected_root">Target folder set to the repository root.</string>
+    <string name="browser_selected_folder">Target folder set to %1$s</string>
+    <string name="browser_up_desc">Go up one level</string>
+
+    <!-- ================== v0.3.1 push progress ================== -->
+    <string name="push_progress_files">Pushing to %1$s — %2$d of %3$d files…</string>
+
+    <!-- ================== v0.3.3 push history ================== -->
+    <string name="menu_history">History</string>
+    <string name="history_title">Push history</string>
+    <string name="history_empty">No pushes yet.\nYour pushes will show up here.</string>
+    <string name="history_clear">Clear history</string>
+    <string name="history_clear_confirm_title">Clear push history?</string>
+    <string name="history_clear_confirm_text">This deletes the list of past pushes on this device. Repositories on GitHub are not affected.</string>
+    <string name="history_repo_branch">%1$s · %2$s</string>
+    <string name="history_files_count">%1$d files</string>
+    <string name="history_one_file">1 file</string>
+    <string name="history_failed">Failed</string>
+    <string name="history_see_changes">See changes on GitHub</string>
+    <string name="history_files_header">Files in this push</string>
+    <string name="history_root">repository root</string>
+    <string name="history_folder">Folder: %1$s</string>
+    <string name="history_author">by %1$s</string>
+    <string name="history_and_more">+ %1$d more</string>
+    <string name="history_show_all_files">Show all %1$d files</string>
+    <string name="history_details">Details</string>
+    <string name="history_bytes">%1$s</string>
+    <string name="history_delete">Delete</string>
 </resources>

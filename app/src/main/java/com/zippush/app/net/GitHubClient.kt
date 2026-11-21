@@ -12,9 +12,13 @@ import java.net.URL
  */
 class GitHubClient(
     private val token: String,
-    /** Injectable for tests (MockWebServer); empty = real GitHub. */
-    private val baseUrl: String = "https://api.github.com"
+    /** Injectable for tests (MockWebServer); empty = real GitHub.
+     *  A trailing slash is normalized away so URL concatenation can
+     *  never produce "//" paths. */
+    baseUrl: String = "https://api.github.com"
 ) {
+
+    private val baseUrl: String = baseUrl.trimEnd('/')
 
     /** Result of an API call that returns a JSON body. */
     sealed class ApiResult<out T> {
@@ -87,6 +91,44 @@ class GitHubClient(
                     val name = if (o.isNull("name")) ""
                         else o.optString("name", "").orEmpty()
                     if (name.isNotBlank()) out.add(Branch(name))
+                }
+                return out
+            }
+        }
+    }
+
+    /**
+     * An entry of a repository directory listing (GET /repos/…/contents),
+     * used by the target-folder browser (v0.3.0). Files are kept in the
+     * parsed list too — the browser shows folders only, but the full
+     * listing stays available to callers.
+     */
+    data class DirEntry(
+        val name: String,
+        val path: String,
+        val type: String
+    ) {
+        val isDir: Boolean get() = type == "dir"
+
+        override fun toString() = name
+
+        companion object {
+            /**
+             * Parses a /contents page defensively: entries missing a name
+             * are skipped, a missing path falls back to the name, and a
+             * missing type reads as "file".
+             */
+            fun parseList(arr: JSONArray): List<DirEntry> {
+                val out = mutableListOf<DirEntry>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val name = if (o.isNull("name")) "" else o.optString("name", "").orEmpty()
+                    if (name.isBlank()) continue
+                    val path = if (o.isNull("path")) name
+                        else o.optString("path", "").orEmpty().ifBlank { name }
+                    val type = if (o.isNull("type")) "file"
+                        else o.optString("type", "file").orEmpty().ifBlank { "file" }
+                    out.add(DirEntry(name, path, type))
                 }
                 return out
             }
@@ -236,6 +278,42 @@ class GitHubClient(
             }
         }
         return ApiResult.Success(branches)
+    }
+
+    /**
+     * GET /repos/{owner}/{repo}/contents/{path}?ref={branch} — one
+     * directory listing of the repository, exactly as GitHub's own file
+     * browser shows it (v0.3.0). Backs the target-folder Explorer popup.
+     *
+     * The contents endpoint caps a directory at 1,000 entries; beyond
+     * that GitHub recommends the Git Trees API, which is surfaced as an
+     * explicit error so the popup can say so instead of silently
+     * showing a partial tree. An empty repository answers 409 with
+     * "Git Repository is empty" — that is a navigable state (the root
+     * simply has nothing in it), not a failure.
+     */
+    fun listDir(owner: String, repo: String, path: String, ref: String): ApiResult<List<DirEntry>> {
+        val cleanPath = path.trim().trim('/')
+        val url = buildString {
+            append("$baseUrl/repos/$owner/$repo/contents")
+            if (cleanPath.isNotEmpty()) {
+                append("/")
+                append(cleanPath.split('/').joinToString("/") {
+                    java.net.URLEncoder.encode(it, "UTF-8")
+                })
+            }
+            append("?ref=")
+            append(java.net.URLEncoder.encode(ref, "UTF-8"))
+        }
+        return when (val r = execute<JSONArray>(url, "GET")) {
+            is ApiResult.Success -> ApiResult.Success(DirEntry.parseList(r.data))
+            is ApiResult.Error -> {
+                // 409 on this endpoint means "Git Repository is empty":
+                // report it as an empty folder, not an error.
+                if (r.code == 409) ApiResult.Success(emptyList())
+                else r
+            }
+        }
     }
 
     /** GET /repos/{owner}/{repo}/git/ref/heads/{branch} — commit SHA of a branch head. */

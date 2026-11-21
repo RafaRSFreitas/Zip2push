@@ -30,9 +30,10 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.zippush.app.browser.FolderBrowser
 import com.zippush.app.engine.ArchiveReader
 import com.zippush.app.engine.UploadEngine
-import com.zippush.app.history.PushHistoryStore
+import com.zippush.app.history.PushHistoryDialog
 import com.zippush.app.net.GitHubClient
 import com.zippush.app.push.PushRunner
 import com.zippush.app.push.PushService
@@ -76,20 +77,18 @@ class MainActivity : AppCompatActivity() {
         private const val STATE_BACKDATE_EPOCH = "backdate_epoch_ms"
 
         /**
-         * v0.3.5: MIME types the "Add Rar/Zip/Tar" picker offers —
-         * exactly the three archive families the button accepts. The
-         * list is only a provider-side filter; the real validation
-         * happens on the picked bytes (see [onArchivePicked]).
+         * v0.4.0: MIME types the "Add Rar/Zip/Tar" picker offers — ONLY the
+         * three archive formats the button accepts (gzip is gone since
+         * tar.gz is no longer accepted through this button). The list is
+         * only a provider-side filter; the real validation happens on the
+         * picked bytes (see [onArchivePicked]).
          */
         private val ARCHIVE_MIME_TYPES = arrayOf(
-            // zip
-            "application/zip", "application/x-zip-compressed", "application/x-compressed",
-            // tar (and tar.gz — providers vary)
-            "application/x-tar", "application/tar", "application/x-gtar",
-            "application/x-gzip", "application/gzip",
-            // rar
+            "application/zip", "application/x-zip-compressed",
+            "application/x-compressed",
+            "application/x-tar", "application/tar",
+            "application/x-gtar",
             "application/x-rar-compressed", "application/vnd.rar", "application/rar",
-            // providers frequently report unknown binaries as this
             "application/octet-stream"
         )
     }
@@ -125,6 +124,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var commitBodyInput: TextInputEditText
     private lateinit var commitExpandBtn: MaterialButton
     private lateinit var commitCollapseBtn: MaterialButton
+    private lateinit var targetDirLayout: TextInputLayout
 
     // ------------------------------------------------------------------ state
     private lateinit var vault: TokenVault
@@ -204,9 +204,15 @@ class MainActivity : AppCompatActivity() {
      * Test seam for the push-flow tests: connect a REAL client pointed
      * at a test server (MockWebServer) and load the repo list through
      * the real HTTP path — the success path of [connectWithToken],
-     * minus the vault write.
+     * minus the vault write. [asAccountSwitch] mirrors the card reset a
+     * real non-auto connect performs (v0.3.0).
      */
-    internal fun connectWithBaseUrlForTest(token: String, baseUrl: String) {
+    internal fun connectWithBaseUrlForTest(
+        token: String,
+        baseUrl: String,
+        asAccountSwitch: Boolean = false
+    ) {
+        if (asAccountSwitch) resetPushCardForAccountChange()
         val c = GitHubClient(token, baseUrl)
         client = c
         engine = UploadEngine(c)
@@ -276,6 +282,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         alive = false
         PushRunner.removeObserver(pushObserver)
+        folderBrowser?.dismiss()
         scope.cancel()
         super.onDestroy()
     }
@@ -306,12 +313,6 @@ class MainActivity : AppCompatActivity() {
      * time; remembered in the session state when it succeeds).
      */
     private var pushedTargetDir: String = ""
-
-    /** v0.3.5: captured at push-start for the History record. */
-    private var pushedRepoName: String = ""
-    private var pushedBranchName: String = "main"
-    private var pushedMessageTitle: String = ""
-    private var pushedFileNames: List<String> = emptyList()
 
     // Adapter model for the branch dropdown: a real branch or the
     // trailing "create new branch" action row.
@@ -365,6 +366,7 @@ class MainActivity : AppCompatActivity() {
         commitBodyInput = findViewById(R.id.commitBodyInput)
         commitExpandBtn = findViewById(R.id.commitExpandBtn)
         commitCollapseBtn = findViewById(R.id.commitCollapseBtn)
+        targetDirLayout = findViewById(R.id.targetDirLayout)
 
         // Enforce EXACT equality of the Files / Folder buttons. LinearLayout
         // weight rounding can differ by a pixel on odd-width rows; after
@@ -429,12 +431,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // v0.3.0: the folder icon on the target-folder field opens the
+        // repository folder Explorer (real folders of the selected
+        // repo/branch, breadcrumbs, level-up, new-folder action).
+        targetDirLayout.setEndIconOnClickListener { openFolderBrowser() }
+
         zipBtn.setOnClickListener {
-            // v0.3.5: the archive button accepts RAR, ZIP and tar only.
-            // The picker filters by the MIME types providers usually
-            // report; providers that report something odd fall back to
-            // showing all files (the format is validated by magic bytes
-            // at pick time anyway).
+            // v0.4.0: the top button takes ONLY RAR, ZIP and TAR archives
+            // (tar.gz included no more). The picker filters by the MIME
+            // types providers usually report; providers that report
+            // something odd fall back to showing all files (the format
+            // is validated by magic bytes at pick time anyway).
             try {
                 pickZip.launch(ARCHIVE_MIME_TYPES)
             } catch (e: Exception) {
@@ -560,6 +567,13 @@ class MainActivity : AppCompatActivity() {
         if (!alive) return
         val busy = netBusy || PushRunner.isBusy()
         progress.visibility = if (busy) View.VISIBLE else View.GONE
+        // v0.3.1: outside a running push WITH a file counter, the bar is
+        // the classic indeterminate one (connect / load / push-prepare).
+        if (PushRunner.state !is PushRunner.State.Running ||
+            (PushRunner.state as PushRunner.State.Running).progress == null
+        ) {
+            progress.isIndeterminate = true
+        }
         pushBtn.isEnabled = !busy
         zipBtn.isEnabled = !busy
         filesBtn.isEnabled = !busy
@@ -652,10 +666,22 @@ class MainActivity : AppCompatActivity() {
         popup.show()
     }
 
-    /** v0.3.5: the History dialog (past pushes, newest first). */
-    internal fun showHistoryDialog() {
-        com.zippush.app.history.PushHistoryDialog.show(this)
+    /** v0.3.3: the push History (list + details + GitHub link). */
+    private fun showHistoryDialog() {
+        historyDialogViewForTest = PushHistoryDialog.show(this)
     }
+
+    /** Test hook: opens the History dialog (the menu action's route). */
+    internal fun showHistoryDialogForTest() {
+        showHistoryDialog()
+    }
+
+    /** Test hook: the view of the LAST History dialog shown. */
+    internal fun lastHistoryDialogViewForTest(): View? =
+        historyDialogViewForTest
+
+    /** The last History dialog's content view (set when it opens). */
+    private var historyDialogViewForTest: View? = null
 
     // ------------------------------------------------------------- theme toggle
 
@@ -726,17 +752,20 @@ class MainActivity : AppCompatActivity() {
     // ------------------------------------------------------------- folder walk
 
     /**
-     * v0.3.5: an archive picked with the "Add Rar/Zip/Tar" button.
-     * The format is verified by MAGIC BYTES (providers lie about MIME
-     * types — a .rar often arrives as application/octet-stream), so a
-     * non-archive file is rejected here with a clear toast instead of
-     * failing mid-push.
+     * v0.4.0: an archive picked with the "Add Rar/Zip/Tar" button. ONLY
+     * RAR, ZIP and TAR are accepted (tar.gz included no more — a gzip
+     * stream must go through "Add file" instead). The format is verified
+     * by MAGIC BYTES (providers lie about MIME types — a .rar often
+     * arrives as application/octet-stream), so a wrong file is rejected
+     * here with a clear toast instead of failing mid-push.
      */
     private fun onArchivePicked(uri: Uri) {
         val format = runCatching {
             contentResolver.openInputStream(uri)?.use { ArchiveReader.detectFormat(it) }
         }.getOrNull() ?: ArchiveReader.Format.UNKNOWN
-        if (format == ArchiveReader.Format.UNKNOWN) {
+        if (format == ArchiveReader.Format.UNKNOWN ||
+            format == ArchiveReader.Format.TAR_GZ
+        ) {
             tracker.pickZip(null)
             pickedArchiveFormat = null
             refreshSelectionSummary()
@@ -748,16 +777,16 @@ class MainActivity : AppCompatActivity() {
         refreshSelectionSummary()
     }
 
-    /** Test hook: runs the archive-button pick path for [uri]. */
+    /**
+     * The format of the currently picked archive (detected at pick
+     * time, v0.4.0) — spares the summary a second stream open.
+     */
+    private var pickedArchiveFormat: ArchiveReader.Format? = null
+
+    /** Test hook: runs the Add Rar/Zip/Tar pick path for [uri]. */
     internal fun onArchivePickedForTest(uri: Uri) {
         onArchivePicked(uri)
     }
-
-    /**
-     * The format of the currently picked archive (detected at pick
-     * time, v0.3.5) — spares the summary a second stream open.
-     */
-    private var pickedArchiveFormat: ArchiveReader.Format? = null
 
     /**
      * Walks the picked document tree recursively and turns every regular
@@ -943,8 +972,33 @@ class MainActivity : AppCompatActivity() {
         }
         vault.setActiveLogin(login)
         // Switching accounts keeps the picked files — the selection is
-        // account-independent; only repo access changes.
+        // account-independent; only repo access changes. The rest of the
+        // "Choose what to push" card IS account-bound: another account
+        // has other repos, branches and folders, so the selections made
+        // for the previous login must not survive the switch (v0.3.0).
+        resetPushCardForAccountChange()
         connectWithToken(token)
+    }
+
+    /**
+     * Clears the account-bound parts of the "Choose what to push" card:
+     * repository, branch, target folder and the previous push's View-on-
+     * GitHub button. Called when the ACTIVE ACCOUNT changes (switch or
+     * fresh connect of a different login) — the card then rebuilds
+     * itself from the new account's repositories.
+     */
+    private fun resetPushCardForAccountChange() {
+        selectedRepo = null
+        selectedBranch = null
+        branches.clear()
+        branchItems.clear()
+        repoDropdown.setText("", false)
+        branchDropdown.setText("", false)
+        targetDirInput.setText("")
+        (repoDropdown.adapter as? ArrayAdapter<*>)?.clear()
+        (branchDropdown.adapter as? ArrayAdapter<*>)?.clear()
+        viewRepoBtn.visibility = View.GONE
+        lastCommitUrl = null
     }
 
     /** Clears the connection state back to "no account". */
@@ -986,6 +1040,10 @@ class MainActivity : AppCompatActivity() {
         // needs to see "Pushed ✓ …". User-initiated connects clear it —
         // the user just started a new, more important flow (v0.2.9).
         if (!auto) holdDoneResult = null
+        // v0.3.0: connecting (including the auto-connect of a DIFFERENT
+        // saved account) refreshes the card — the repo list that lands
+        // right after belongs to the new account. The picked files stay.
+        if (!auto) resetPushCardForAccountChange()
         setBusy(true)
         setStatus("Verifying token…", StatusKind.PROGRESS)
         scope.launch {
@@ -1151,9 +1209,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun onRepoSelected(repo: GitHubClient.Repo) {
+        // v0.3.2: a folder picked for the PREVIOUS repository does not
+        // belong to this one (another repo = another folder tree), so
+        // CHANGING the repository clears the target folder — same rule
+        // as the branch field right below. Re-picking the SAME repo
+        // (e.g. to refresh its branches) keeps the chosen folder.
+        val repoChanged = selectedRepo?.fullName != repo.fullName
         selectedRepo = repo
         selectedBranch = null
         branchDropdown.setText("", false)
+        if (repoChanged) {
+            targetDirInput.setText("")
+            refreshTargetDirSuggestions()
+        }
         viewRepoBtn.visibility = View.GONE
         lastCommitUrl = null
         setBusy(true)
@@ -1350,14 +1418,16 @@ class MainActivity : AppCompatActivity() {
         selectionText.visibility = if (zip == null && files.isEmpty()) View.GONE else View.VISIBLE
         selectionText.text = buildString {
             zip?.let {
-                // v0.3.5: any archive format may sit here (RAR/ZIP/tar),
-                // so the label names what was detected at pick time.
+                // v0.4.0: only ZIP/tar/RAR pass the archive button, so the
+                // label names what was detected at pick time (the TAR_GZ
+                // branch stays as a defensive fallback).
                 val label = when (pickedArchiveFormat) {
                     ArchiveReader.Format.TAR_GZ -> "tar.gz"
                     ArchiveReader.Format.RAR4, ArchiveReader.Format.RAR5 -> "RAR"
                     ArchiveReader.Format.ZIP -> "zip"
                     ArchiveReader.Format.TAR -> "tar"
-                    null, ArchiveReader.Format.UNKNOWN -> null
+                    null -> null
+                    ArchiveReader.Format.UNKNOWN -> null
                 }
                 val name = queryDisplayName(it) ?: "archive"
                 appendLine(
@@ -1403,6 +1473,127 @@ class MainActivity : AppCompatActivity() {
         val ad = targetDirInput.adapter as? ArrayAdapter<*>
         return (0 until (ad?.count ?: 0)).map { ad?.getItem(it)?.toString() ?: "" }
     }
+
+    /** Test hook: the target-folder field text ("" = repository root). */
+    internal fun targetDirTextForTest(): String =
+        targetDirInput.text?.toString().orEmpty()
+
+    /** Test hook: set the target-folder field as if typed. */
+    internal fun setTargetDirTextForTest(text: String) {
+        targetDirInput.setText(text)
+    }
+
+    /** Test hook: set the commit message (title line). */
+    internal fun setCommitMessageForTest(text: String) {
+        commitMessageInput.setText(text)
+    }
+
+    /** Test hook: the token vault (accounts) of this activity. */
+    internal fun vaultForTest() = vault
+
+    /**
+     * Test hook: select a repository through the REAL selection path
+     * (the dropdown listener -> onRepoSelected: loads branches, resets
+     * branch and — v0.3.2 — the target folder).
+     */
+    internal fun selectRepoForTest(repo: GitHubClient.Repo) {
+        scope.launch { onRepoSelected(repo) }
+    }
+
+    // ------------------------------------------------- folder explorer (v0.3.0)
+
+    /**
+     * The popup currently open, if any (kept so a rotation dismisses it
+     * instead of leaking a dialog with a dead activity).
+     */
+    private var folderBrowser: FolderBrowser? = null
+
+    /** Test hook: the paths reported by the last Explorer result. */
+    internal var lastBrowserSelectionForTest: String? = null
+
+    /**
+     * Opens the target-folder Explorer on the REAL folders of the
+     * selected repository + branch. The selection lands in the field as
+     * plain text (what the push consumes); dismissing keeps whatever was
+     * there before.
+     */
+    internal fun openFolderBrowser() {
+        val repo = selectedRepo ?: run {
+            Toast.makeText(this, getString(R.string.browser_need_repo), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val branch = selectedBranch?.name
+            ?: repo.defaultBranch.takeIf { it.isNotBlank() }
+            ?: "main"
+        val client = client ?: return
+        val startPath = targetDirInput.text?.toString()?.trim().orEmpty()
+        val browser = FolderBrowser(this, client, scope)
+        folderBrowser = browser
+        browser.show(repo, branch, startPath) { result ->
+            folderBrowser = null
+            when (result) {
+                is FolderBrowser.Result.Selected -> {
+                    targetDirInput.setText(result.path)
+                    refreshTargetDirSuggestions()
+                    lastBrowserSelectionForTest = result.path
+                    setStatus(
+                        if (result.path.isEmpty())
+                            getString(R.string.browser_selected_root)
+                        else getString(R.string.browser_selected_folder, result.path),
+                        StatusKind.INFO
+                    )
+                }
+                FolderBrowser.Result.Cancelled -> Unit
+            }
+        }
+    }
+
+    /** Test hook: open the Explorer. */
+    internal fun openFolderBrowserForTest() = openFolderBrowser()
+
+    /** Test hook: dismiss the Explorer programmatically. */
+    internal fun dismissFolderBrowserForTest() { folderBrowser?.dismiss() }
+
+    /** Test hook: the Explorer's current path (null when closed). */
+    internal fun folderBrowserPathForTest(): String? = folderBrowser?.currentPathForTest()
+
+    /** Test hook: the Explorer's visible row labels (null when closed). */
+    internal fun folderBrowserRowsForTest(): List<String>? = folderBrowser?.rowLabelsForTest()
+
+    /** Test hook: the Explorer's breadcrumb labels (null when closed). */
+    internal fun folderBrowserCrumbsForTest(): List<String>? = folderBrowser?.breadcrumbLabelsForTest()
+
+    /** Test hook: tap a browser row by position (folders first, action last). */
+    internal fun tapBrowserRowForTest(position: Int) { folderBrowser?.tapRowForTest(position) }
+
+    /** Test hook: tap a breadcrumb crumb by index (repo crumb = 0). */
+    internal fun tapBrowserCrumbForTest(index: Int) { folderBrowser?.tapBreadcrumbForTest(index) }
+
+    /** Test hook: confirm the current browser folder (choose action). */
+    internal fun chooseInFolderBrowserForTest() { folderBrowser?.chooseForTest() }
+
+    /**
+     * Test hook: run the new-folder flow with [name] as if typed in the
+     * dialog (validates the same path-building logic as the UI).
+     */
+    internal fun createFolderInBrowserForTest(name: String) {
+        folderBrowser?.createFolderForTest(name)
+    }
+
+    /** Test hook: whether the Explorer's level-up button is enabled. */
+    internal fun folderBrowserUpEnabledForTest(): Boolean? =
+        folderBrowser?.upEnabledForTest()
+
+    /** Test hook: tap the Explorer's level-up button. */
+    internal fun tapBrowserUpForTest() { folderBrowser?.tapUpForTest() }
+
+    /** Test hook: the push progress bar state (null when indeterminate). */
+    internal fun pushProgressForTest(): Pair<Int, Int>? =
+        if (!progress.isIndeterminate) Pair(progress.progress, progress.max) else null
+
+    /** Test hook: whether the Explorer is fetching a folder listing. */
+    internal fun folderBrowserLoadingForTest(): Boolean =
+        folderBrowser?.isLoadingForTest() ?: false
 
     /**
      * Clear Selection: resets the whole form — picked files, repository,
@@ -1604,7 +1795,27 @@ class MainActivity : AppCompatActivity() {
             is PushRunner.State.Running -> {
                 applyBusy()
                 holdDoneResult = null
-                statusText.text = st.job.description
+                val progressInfo = st.progress
+                if (progressInfo != null && progressInfo.total > 0) {
+                    // v0.3.1: real file counter once the first blob
+                    // landed — "Pushing to repo — 3 of 7 files…" with a
+                    // DETERMINATE bar the user can see move.
+                    statusText.text = getString(
+                        R.string.push_progress_files,
+                        st.job.repoFullName,
+                        progressInfo.done,
+                        progressInfo.total
+                    )
+                    progress.isIndeterminate = false
+                    progress.max = progressInfo.total
+                    progress.setProgressCompat(
+                        progressInfo.done.coerceAtMost(progressInfo.total),
+                        true
+                    )
+                } else {
+                    statusText.text = st.job.description
+                    progress.isIndeterminate = true
+                }
                 statusIcon.setImageResource(R.drawable.ic_info)
                 statusIcon.imageTintList =
                     ColorStateList.valueOf(ContextCompat.getColor(this, R.color.status_text))
@@ -1634,23 +1845,6 @@ class MainActivity : AppCompatActivity() {
                         if (!PushRunner.wasPresented(result)) {
                             PushRunner.markPresented(result)
                             Toast.makeText(this, "Pushed ✓", Toast.LENGTH_SHORT).show()
-                            // v0.3.5: record this push in the History
-                            // (exactly once per push, with it).
-                            runCatching {
-                                PushHistoryStore.append(
-                                    this,
-                                    PushHistoryStore.Entry(
-                                        timestampMs = System.currentTimeMillis(),
-                                        repoFullName = pushedRepoName,
-                                        branch = pushedBranchName,
-                                        targetDir = pushedTargetDir,
-                                        messageTitle = pushedMessageTitle,
-                                        fileCount = result.filesPushed,
-                                        files = result.pushedPaths.ifEmpty { pushedFileNames },
-                                        commitUrl = result.commitUrl
-                                    )
-                                )
-                            }
                             // The folder just pushed to becomes the top
                             // suggestion for the next push (session-scoped).
                             SessionState.rememberTargetDir(pushedTargetDir)
@@ -1659,7 +1853,7 @@ class MainActivity : AppCompatActivity() {
                             // upload. The repo / branch selection stays (users
                             // usually push again to the same place).
                             tracker.clear()
-        pickedArchiveFormat = null
+                            pickedArchiveFormat = null
                             commitMessageInput.setText("")
                             setDescriptionExpanded(false)
                             resetBackdate()
@@ -1726,11 +1920,6 @@ class MainActivity : AppCompatActivity() {
         // suggestions; captured here because the field may be edited
         // or cleared while the push is in flight).
         pushedTargetDir = targetDir
-        // v0.3.5: same-moment capture for the History record.
-        pushedRepoName = repo.fullName
-        pushedBranchName = branch ?: "main"
-        pushedMessageTitle = title
-        pushedFileNames = selection.folderFiles.map { it.repoPath }
 
         // Hand over to the app-scoped runner: the push survives rotation
         // and the recreated activity re-attaches to show the result

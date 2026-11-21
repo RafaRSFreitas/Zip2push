@@ -5,6 +5,8 @@ import android.net.Uri
 import com.zippush.app.R
 import com.zippush.app.SelectionTracker
 import com.zippush.app.engine.UploadEngine
+import com.zippush.app.history.HistoryEntry
+import com.zippush.app.history.PushHistoryStore
 import com.zippush.app.net.GitHubClient
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -35,15 +37,35 @@ object PushRunner {
     /** A push in progress. */
     data class PushJob(
         val id: Long,
-        val description: String
+        val description: String,
+        /** "owner/name" of the target repo — lets the UI compose its own
+         *  progress text (v0.3.1) without parsing [description]. */
+        val repoFullName: String = ""
     )
 
     /** Observable push lifecycle. */
     sealed class State {
         object Idle : State()
-        data class Running(val job: PushJob) : State()
+
+        /**
+         * A push is running. [progress] (v0.3.1) carries the file
+         * counter once the first blob landed: done / total files. Null
+         * while the push is still preparing (reading the selection /
+         * resolving the branch) — the UI shows an indeterminate bar then.
+         */
+        data class Running(
+            val job: PushJob,
+            val progress: Progress? = null
+        ) : State()
+
         data class Done(val result: UploadEngine.PushResult) : State()
     }
+
+    /**
+     * File-count progress of a running push (v0.3.1): how many of the
+     * [total] files have been uploaded (blobbed) so far.
+     */
+    data class Progress(val done: Int, val total: Int)
 
     /** Called on the main thread whenever the state changes. */
     fun interface Observer {
@@ -88,6 +110,13 @@ object PushRunner {
 
     private var pending: Pending? = null
 
+    /**
+     * Repo paths of the files of the push being executed (v0.3.3) —
+     * filled by [execute] on IO, read by [recordHistory] right after,
+     * on the same coroutine. Only meaningful while a push runs.
+     */
+    private val resolvedPaths = mutableListOf<String>()
+
     /** Registers [observer]; returns false if it was already registered. */
     fun addObserver(observer: Observer): Boolean = synchronized(observers) {
         if (observers.contains(observer)) false else observers.add(observer)
@@ -102,6 +131,7 @@ object PushRunner {
         synchronized(observers) { observers.clear() }
         state = State.Idle
         pending = null
+        synchronized(resolvedPaths) { resolvedPaths.clear() }
         presentedResultId = -1L
     }
 
@@ -127,6 +157,10 @@ object PushRunner {
         presentedResultId = result.id
     }
 
+    /** Test seam: the latest progress report of the running push, if any. */
+    fun currentProgressForTest(): Progress? =
+        (state as? State.Running)?.progress
+
     /**
      * Starts a push. Returns false when one is already running (double
      * tap) — the caller shows "already in progress" in that case.
@@ -147,7 +181,7 @@ object PushRunner {
         authorLogin: String?
     ): Boolean {
         if (isBusy()) return false
-        val job = PushJob(nextId++, "Pushing to ${repo.fullName}…")
+        val job = PushJob(nextId++, "Pushing to ${repo.fullName}…", repo.fullName)
         val appContext = context.applicationContext
         pending = Pending(
             job, engine, selection, repo, branch, targetDir, message,
@@ -158,9 +192,55 @@ object PushRunner {
             val p = pending ?: return@launch
             val result = execute(p, appContext)
             pending = null
-            setState(State.Done(withJobId(result, job.id)))
+            // v0.3.3: every finished push lands in the local History
+            // (successes AND failures — the user wants to know what was
+            // pushed and what went wrong). Best-effort: a history write
+            // must never fail the push flow.
+            runCatching { recordHistory(appContext, p, result) }
+            setState(State.Done(withJobId(result, p.job.id)))
         }
         return true
+    }
+
+    /** Persists one finished push for the History screen (v0.3.3). */
+    private fun recordHistory(
+        context: Context,
+        p: Pending,
+        result: UploadEngine.PushResult
+    ) {
+        val entry = when (result) {
+            is UploadEngine.PushResult.Success -> HistoryEntry(
+                timestamp = System.currentTimeMillis(),
+                repoFullName = p.repo.fullName,
+                branch = p.branch,
+                targetDir = p.targetDir,
+                messageTitle = p.message.substringBefore('\n'),
+                authorLogin = p.authorLogin ?: "",
+                success = true,
+                commitSha = result.commitSha,
+                commitUrl = result.commitUrl,
+                // Repo paths resolved during the upload (ZIP entries,
+                // folder files, standalone files) — see resolvedPaths.
+                files = synchronized(resolvedPaths) { resolvedPaths.toList() },
+                bytesPushed = result.bytesPushed,
+                failReason = null
+            )
+            is UploadEngine.PushResult.Failure -> HistoryEntry(
+                timestamp = System.currentTimeMillis(),
+                repoFullName = p.repo.fullName,
+                branch = p.branch,
+                targetDir = p.targetDir,
+                messageTitle = p.message.substringBefore('\n'),
+                authorLogin = p.authorLogin ?: "",
+                success = false,
+                commitSha = null,
+                commitUrl = null,
+                files = emptyList(),
+                bytesPushed = 0L,
+                failReason = "${result.stage}: ${result.message}"
+            )
+        }
+        PushHistoryStore.record(context, entry)
     }
 
     /** Tags a result with the job it belongs to (see PushResult.id). */
@@ -179,6 +259,13 @@ object PushRunner {
     ): UploadEngine.PushResult {
         return try {
             val files = buildFileList(p.engine, p.selection, appContext)
+            // v0.3.3: the resolved repo paths of this push feed the
+            // History entry (the names are only known here, after the
+            // ZIP/folder extraction on IO).
+            synchronized(resolvedPaths) {
+                resolvedPaths.clear()
+                resolvedPaths.addAll(files.map { it.path })
+            }
             if (files.isEmpty()) {
                 UploadEngine.PushResult.Failure(
                     "Prepare",
@@ -194,7 +281,14 @@ object PushRunner {
                     commitMessage = p.message,
                     files = files,
                     authorDate = p.authorDateIso,
-                    authorLogin = p.authorLogin
+                    authorLogin = p.authorLogin,
+                    // v0.3.1: each uploaded blob updates the Running
+                    // state with its file counter, so the UI can show a
+                    // real "x of y files" progress bar. Emitted from the
+                    // IO thread; setState hops to main itself.
+                    onProgress = { done, total ->
+                        setState(State.Running(p.job, Progress(done, total)))
+                    }
                 )
             }
         } catch (t: Throwable) {
@@ -278,6 +372,11 @@ object PushRunner {
     }
 
     private fun setState(newState: State) {
+        // v0.3.1: progress updates arrive from the IO thread while the
+        // job runs; a RUNNING state must never overwrite the terminal
+        // DONE of the same job (the last callback could race the result
+        // notification on the main thread).
+        if (newState is State.Running && state is State.Done) return
         state = newState
         // Observers are notified on the main thread (they touch views);
         // failures there are contained by notifyGuard.

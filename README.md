@@ -1,6 +1,6 @@
 # ZipPush
 
-Push ZIP archives and files to GitHub, straight from your phone — no PC, no Git command line, and no laptop required.
+Push archives and files to GitHub, straight from your phone — no PC, no Git command line, and no laptop required.
 
 ZipPush is inspired by the workflow of "ZIP to GitHub Upload" (com.zip2git) but extends it with the most requested convenience: **your repositories are listed in a dropdown menu**, so you never have to paste a repo URL again. Branches are listed in a dropdown too.
 
@@ -9,9 +9,11 @@ ZipPush is inspired by the workflow of "ZIP to GitHub Upload" (com.zip2git) but 
 - **Repository dropdown** — after connecting, all repositories your token can push to are loaded automatically (paginated, up to all repos). Just pick one; no URL pasting. Private repos are marked with 🔒.
 - **Branch dropdown** — all branches of the selected repository, with the default branch preselected.
 - **Create a new branch** — optionally type a new branch name; it is created from the selected branch and the push targets it.
-- **ZIP upload** — pick a `.zip` and its contents are pushed into the repository. If the archive has a single root folder, it is stripped automatically so files land where you expect.
-- **Multiple file upload** — pick any number of individual files and push them all in one commit.
-- **Target folder** — optionally push into a subfolder of the repo (e.g. `assignments/week3`); existing repo files are preserved.
+- **Archive upload (RAR/ZIP/TAR only)** — the **Add Rar/Zip/Tar** button takes a `.rar`, `.zip` or `.tar` archive (format verified by magic bytes, not the file name) and its contents are pushed into the repository. If the archive has a single root folder, it is stripped automatically so files land where you expect. Compressed tarballs (`.tar.gz`/`.tgz`) are NOT accepted by this button — send them as ordinary files instead.
+- **Any file upload** — the **Add file** button accepts any file type, one or several at a time, and pushes them all in a single commit. The **Add folder** button next to it keeps uploading a whole folder (recursively) as before.
+- **Target folder Explorer** — the folder icon on the target-folder field opens a popup that browses the REAL folders of the selected repository/branch, Explorer-style: tappable breadcrumbs (`repo / folder / subfolder`), a dedicated level-up button to return to the parent folder, one-tap navigation into subfolders, a "New folder…" action (nested names supported) and "Choose this folder" to confirm. Free-typing a path still works; existing repo files are preserved.
+- **Push progress with file counter** — while the push uploads, the status line shows how many files are going up ("Pushing to repo — 3 of 7 files…") and the bottom bar turns into a determinate progress bar that advances with each file.
+- **Account switch refreshes the push card** — switching the GitHub account (or connecting a new token) automatically resets the repository, branch, target folder and the previous push's link, then loads the new account's repositories. Picked files stay; the auto-reconnect after a screen rotation never clears anything.
 - **Custom commit messages** — or accept the default.
 - **Private repository support** — works with any token that has access.
 - **Token stays on device** — the PAT is stored encrypted with a hardware-backed Android Keystore key (AES/GCM). No backend, no analytics, no server storage of tokens or files.
@@ -24,8 +26,13 @@ ZipPush is inspired by the workflow of "ZIP to GitHub Upload" (com.zip2git) but 
 3. Pick a repository from the dropdown.
 4. Pick a branch (or type a new branch name).
 5. Optionally set a target folder and commit message.
-6. Tap **Add ZIP archive** or **Add individual files**.
+6. Tap **Add Rar/Zip/Tar** (archives only) or **Add file** (any file, several at once) / **Add folder**.
 7. Tap **Push to GitHub**.
+
+## What's new in v0.4.0
+
+- The top picker button is now called **Add Rar/Zip/Tar** and accepts ONLY those three formats (`.rar`, `.zip`, `.tar`), validated by magic bytes at pick time. `tar.gz`/`.tgz` files are no longer taken by this button — pick them with **Add file** instead.
+- The lower-left button is now called **Add file**: any file type, one or many at once (side-by-side with **Add folder**, unchanged).
 
 ## Building the APK
 
